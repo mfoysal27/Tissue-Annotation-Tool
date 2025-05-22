@@ -1,0 +1,21 @@
+a.	Villi
+i.	Epithelium
+ii.	Basement membrane
+iii.	Villi Lamina propria
+iv.	Blood vessels
+v.	Lumen
+b.	Gland
+i.	Epithelium
+ii.	Basement membrane
+iii.	Gland Lamina propria
+c.	Submucosa
+i.	SMP Ganglion
+ii.	SMP Fiber tract
+iii. Artery
+iv.	Vein
+v.	Pericryptal space
+d.	Circular muscle
+e.	Myenteric plexus
+i.	MYP Ganglion
+ii.	MYP Fiber tract
+f.	Longitudinal muscle
