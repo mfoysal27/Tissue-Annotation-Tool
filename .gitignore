@@ -1,0 +1,8 @@
+build/
+dist/
+result/
+
+*.exe
+*.spec
+*.jpg
+*.png
