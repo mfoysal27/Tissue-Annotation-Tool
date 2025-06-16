@@ -10,6 +10,11 @@ from pathlib import Path
 from collections import deque
 import time
 
+# Import PyTorch modules
+import torch
+import torch.nn as nn
+from torchvision import transforms
+
 # Import for debugging
 import logging
 logging.basicConfig(filename='nd2_loading.log', level=logging.DEBUG, 
@@ -43,11 +48,112 @@ if not (has_nd2reader or has_nd2):
     logger.error("No ND2 file support available. Neither nd2reader nor nd2 could be imported.")
     print("Warning: Neither nd2reader nor nd2 package found. ND2 file support will be disabled.")
 
+class DoubleConv(nn.Module):
+    """Double Convolution and BN and ReLU"""
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.double_conv = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+        )
+
+    def forward(self, x):
+        return self.double_conv(x)
+
+class UNet(nn.Module):
+    def __init__(self, n_channels, n_classes):
+        super().__init__()
+        self.n_channels = n_channels
+        self.n_classes = n_classes
+
+        # Downsampling path
+        self.inc = DoubleConv(n_channels, 64)
+        self.down1 = nn.Sequential(
+            nn.MaxPool2d(2),
+            DoubleConv(64, 128)
+        )
+        self.down2 = nn.Sequential(
+            nn.MaxPool2d(2),
+            DoubleConv(128, 256)
+        )
+        self.down3 = nn.Sequential(
+            nn.MaxPool2d(2),
+            DoubleConv(256, 512)
+        )
+        self.down4 = nn.Sequential(
+            nn.MaxPool2d(2),
+            DoubleConv(512, 512)
+        )
+
+        # Upsampling path
+        self.up1 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
+        self.up1_conv = DoubleConv(512 + 256, 256)  # 512 from x4 + 256 from up1 = 768
+        
+        self.up2 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
+        self.up2_conv = DoubleConv(256 + 128, 128)  # 256 from x3 + 128 from up2 = 384
+        
+        self.up3 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
+        self.up3_conv = DoubleConv(128 + 64, 64)  # 128 from x2 + 64 from up3 = 192
+        
+        self.up4 = nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2)
+        self.up4_conv = DoubleConv(64 + 64, 64)  # 64 from x1 + 64 from up4 = 128
+        
+        self.outc = nn.Conv2d(64, n_classes, kernel_size=1)
+
+    def center_crop(self, enc_feat, dec_feat):
+        """Crop enc_feat to the size of dec_feat (center crop)"""
+        _, _, h, w = dec_feat.shape
+        enc_h, enc_w = enc_feat.shape[2], enc_feat.shape[3]
+        crop_h = (enc_h - h) // 2
+        crop_w = (enc_w - w) // 2
+        return enc_feat[:, :, crop_h:crop_h + h, crop_w:crop_w + w]
+
+    def forward(self, x):
+        # Downsampling
+        x1 = self.inc(x)
+        x2 = self.down1(x1)
+        x3 = self.down2(x2)
+        x4 = self.down3(x3)
+        x5 = self.down4(x4)
+
+        # Upsampling with skip connections and cropping
+        x = self.up1(x5)
+        x4_crop = self.center_crop(x4, x)
+        x = self.up1_conv(torch.cat([x4_crop, x], dim=1))
+        
+        x = self.up2(x)
+        x3_crop = self.center_crop(x3, x)
+        x = self.up2_conv(torch.cat([x3_crop, x], dim=1))
+        
+        x = self.up3(x)
+        x2_crop = self.center_crop(x2, x)
+        x = self.up3_conv(torch.cat([x2_crop, x], dim=1))
+        
+        x = self.up4(x)
+        x1_crop = self.center_crop(x1, x)
+        x = self.up4_conv(torch.cat([x1_crop, x], dim=1))
+        
+        x = self.outc(x)
+        return x
+
 class TissueSegmentationTool:
     def __init__(self, root):
         self.root = root
         self.root.title("Tissue Segmentation Tool")
-        self.root.geometry("1200x800")
+        self.root.geometry("1400x900")  # Increased from 1200x800
+        
+        # Initialize ML-related variables
+        self.model = None
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.transform = transforms.Compose([
+            transforms.Resize((256, 256)),  # Fixed size for the model
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
         
         self.current_image = None
         self.original_images = []
@@ -78,6 +184,13 @@ class TissueSegmentationTool:
         self.canvas_y_offset = 0
         self.dragging = False
         
+        # Add opacity control for annotation overlay
+        self.annotation_opacity = 0.7  # Default 70% opacity
+        
+        # Auto-segmentation queue for folder processing
+        self.auto_segment_queue = []
+        self.auto_segment_model_ready = False
+        
         # Initialize the hardcoded segments and colors
         self.initialize_segments()
         
@@ -94,14 +207,13 @@ class TissueSegmentationTool:
         villi = "Villi"
         self.segments.append(villi)
         self.segment_hierarchy[villi] = []
-        self.segment_colors[villi] = (220, 20, 60, 255)  # Crimson
+        self.segment_colors[villi] = (255, 192, 203, 255)  # Pink
         
         villi_subs = [
-            ("Epithelium", (255, 55, 95, 255)),  # Lighter Crimson
-            ("Basement membrane", (185, 0, 25, 255)),  # Darker Crimson
-            ("Villi Lamina propria", (255, 0, 30, 255)),  # Reddish Crimson
-            ("Blood vessels", (190, 60, 30, 255)),  # Greenish Crimson
-            ("Lumen", (190, 0, 100, 255)),  # Bluish Crimson
+            ("Epithelium", (0, 100, 0, 255)),  # Dark green
+            ("Basement membrane", (255, 0, 255, 255)),  # Bright magenta
+            ("Lamina propria", (184, 134, 11, 255)),  # Dark yellow
+            ("Central lacteal or blood vessels", (0, 191, 255, 255)),  # Bright blue
         ]
         
         for name, color in villi_subs:
@@ -114,12 +226,12 @@ class TissueSegmentationTool:
         gland = "Gland"
         self.segments.append(gland)
         self.segment_hierarchy[gland] = []
-        self.segment_colors[gland] = (50, 205, 50, 255)  # Lime Green
+        self.segment_colors[gland] = (255, 255, 255, 255)  # White
         
         gland_subs = [
-            ("Epithelium", (85, 240, 85, 255)),  # Lighter Lime Green
-            ("Basement membrane", (15, 170, 15, 255)),  # Darker Lime Green
-            ("Gland Lamina propria", (90, 175, 20, 255)),  # Reddish Green
+            ("Epithelium", (0, 255, 0, 255)),  # Bright green
+            ("Basement membrane", (139, 0, 0, 255)),  # Dark red
+            ("Lamina propria", (255, 255, 0, 255)),  # Bright yellow
         ]
         
         for name, color in gland_subs:
@@ -128,54 +240,55 @@ class TissueSegmentationTool:
             self.segment_hierarchy[gland].append(full_name)
             self.segment_colors[full_name] = color
         
-        # 3. Submucosa and its subfeatures
-        submucosa = "Submucosa"
-        self.segments.append(submucosa)
-        self.segment_hierarchy[submucosa] = []
-        self.segment_colors[submucosa] = (65, 105, 225, 255)  # Royal Blue
-        
-        submucosa_subs = [
-            ("SMP Ganglion", (100, 140, 255, 255)),  # Lighter Royal Blue
-            ("SMP Fiber tract", (30, 70, 190, 255)),  # Darker Royal Blue
-            ("Artery", (105, 75, 195, 255)),  # Reddish Royal Blue
-            ("Vein", (35, 145, 195, 255)),  # Greenish Royal Blue
-            ("Pericryptal space", (35, 75, 255, 255)),  # Bluish Royal Blue
+        # 3. Individual Submucosa features
+        submucosa_features = [
+            ("Submucosa Ganglion", (64, 64, 64, 255)),  # Dark gray
+            ("Submucosa Fiber tract", (192, 192, 192, 255)),  # Bright gray
+            ("Submucosa Submucosal blood Vessel", (128, 0, 128, 255)),  # Purple
+            ("Submucosa Interstitial tissue", (0, 0, 128, 255)),  # Navy Blue
         ]
         
-        for name, color in submucosa_subs:
-            full_name = f"{submucosa} - {name}"
-            self.segments.append(full_name)
-            self.segment_hierarchy[submucosa].append(full_name)
-            self.segment_colors[full_name] = color
+        for name, color in submucosa_features:
+            self.segments.append(name)
+            self.segment_hierarchy[name] = []  # No subfeatures
+            self.segment_colors[name] = color
         
         # 4. Circular muscle
         circular_muscle = "Circular muscle"
         self.segments.append(circular_muscle)
         self.segment_hierarchy[circular_muscle] = []
-        self.segment_colors[circular_muscle] = (255, 140, 0, 255)  # Dark Orange
+        self.segment_colors[circular_muscle] = (0, 128, 128, 255)  # Teal
         
-        # 5. Myenteric plexus and its subfeatures
-        myenteric_plexus = "Myenteric plexus"
-        self.segments.append(myenteric_plexus)
-        self.segment_hierarchy[myenteric_plexus] = []
-        self.segment_colors[myenteric_plexus] = (138, 43, 226, 255)  # Blue Violet
-        
-        myenteric_subs = [
-            ("MYP Ganglion", (173, 78, 255, 255)),  # Lighter Blue Violet
-            ("MYP Fiber tract", (103, 8, 191, 255)),  # Darker Blue Violet
+        # 5. Individual Myenteric features
+        myenteric_features = [
+            ("Myenteric Ganglion", (205, 133, 63, 255)),  # Bright brown
+            ("Myenteric Fiber tract", (101, 67, 33, 255)),  # Dark brown
         ]
         
-        for name, color in myenteric_subs:
-            full_name = f"{myenteric_plexus} - {name}"
-            self.segments.append(full_name)
-            self.segment_hierarchy[myenteric_plexus].append(full_name)
-            self.segment_colors[full_name] = color
+        for name, color in myenteric_features:
+            self.segments.append(name)
+            self.segment_hierarchy[name] = []  # No subfeatures
+            self.segment_colors[name] = color
         
         # 6. Longitudinal muscle
         longitudinal_muscle = "Longitudinal muscle"
         self.segments.append(longitudinal_muscle)
         self.segment_hierarchy[longitudinal_muscle] = []
-        self.segment_colors[longitudinal_muscle] = (210, 180, 140, 255)  # Tan
+        self.segment_colors[longitudinal_muscle] = (255, 165, 0, 255)  # Orange
+        
+        # 7. Individual Others features
+        others_features = [
+            ("Others Out of Tissue", (0, 0, 0, 255)),  # Black
+            ("Others Fat", (50, 205, 50, 255)),  # Lime Green
+            ("Others Lymphoid tissue", (196, 162, 196, 255)),  # Light wisteria
+            ("Others Vessel", (75, 0, 130, 255)),  # Indigo
+            ("Others Mesenteric tissue", (255, 20, 147, 255)),  # Deep Pink
+        ]
+        
+        for name, color in others_features:
+            self.segments.append(name)
+            self.segment_hierarchy[name] = []  # No subfeatures
+            self.segment_colors[name] = color
     
     def create_landing_page(self):
         # Clear existing widgets
@@ -760,10 +873,57 @@ class TissueSegmentationTool:
     
     def process_regular_image(self, file_path):
         try:
+            # Check if this is an auto-segmented original image
+            base_name = os.path.basename(file_path)
+            if base_name.startswith("auto_segmented_original_"):
+                # This is an auto-segmented original image, try to load the corresponding mask
+                mask_name = base_name.replace("auto_segmented_original_", "auto_segmented_mask_")
+                mask_name = os.path.splitext(mask_name)[0] + ".png"  # Ensure .png extension
+                mask_path = os.path.join(os.path.dirname(file_path), mask_name)
+                
+                # Load original image
+                img = Image.open(file_path).convert('RGB')
+                
+                # Try to load corresponding mask
+                if os.path.exists(mask_path):
+                    try:
+                        mask = Image.open(mask_path).convert('RGBA')
+                        
+                        # Check if mask has any non-transparent pixels
+                        mask_array = np.array(mask)
+                        non_transparent = np.sum(mask_array[:, :, 3] > 0)
+                        
+                        self.original_images = [img]
+                        self.segmentation_masks = [mask]
+                        self.current_image_index = 0
+                        
+                        # Update window title to indicate auto-segmented image
+                        self.root.title(f"Tissue Segmentation Tool - Auto-Segmented: {base_name}")
+                        
+                        # Show user-friendly message only once per session or if significant annotations
+                        if non_transparent > 100:  # Only show if substantial annotations
+                            messagebox.showinfo("Auto-Segmented Image Loaded", 
+                                              f"✓ Loaded auto-segmented image with {non_transparent} annotated pixels.\n"
+                                              "You can modify the annotations using the paint tools and adjust opacity.")
+                        return
+                    except Exception as e:
+                        logger.warning(f"Failed to load mask {mask_path}: {str(e)}")
+                        # Don't show intrusive popup for loading issues
+                        print(f"Warning: Could not load mask for auto-segmented image")
+                        # Fall back to empty mask
+                        pass
+                else:
+                    # Don't show intrusive popup for missing mask
+                    print(f"Warning: Mask file missing for auto-segmented image")
+            
+            # Default behavior for regular images or if mask loading failed
             img = Image.open(file_path).convert('RGB')
             self.original_images = [img]
             self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0))]
             self.current_image_index = 0
+            
+            # Update window title for regular images
+            self.root.title(f"Tissue Segmentation Tool - {base_name}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to open image: {str(e)}")
     
@@ -772,7 +932,7 @@ class TissueSegmentationTool:
         for widget in self.root.winfo_children():
             widget.destroy()
         
-        self.root.geometry("1200x800")
+        self.root.geometry("1400x900")  # Increased from 1200x800
         
         # Main frame
         main_frame = ttk.Frame(self.root)
@@ -848,6 +1008,22 @@ class TissueSegmentationTool:
             text=f"File: {os.path.basename(self.image_paths[0])}"
         )
         current_file_label.pack(side=tk.LEFT, padx=20, expand=True)
+        
+        # Add status indicator for auto-segmented images
+        self.status_label = ttk.Label(
+            file_nav_frame,
+            text="",
+            foreground="green",
+            font=("Arial", 9, "bold")
+        )
+        self.status_label.pack(side=tk.LEFT, padx=10)
+        
+        # Update status based on current file
+        base_name = os.path.basename(self.image_paths[0])
+        if base_name.startswith("auto_segmented_original_"):
+            self.status_label.config(text="✓ Auto-Segmented")
+        else:
+            self.status_label.config(text="")
         
         next_file_button = ttk.Button(file_nav_frame, text="Next File", command=self.load_next_file)
         next_file_button.pack(side=tk.RIGHT, padx=5)
@@ -936,6 +1112,27 @@ class TissueSegmentationTool:
         self.brush_size_label = ttk.Label(brush_frame, text=f"{self.brush_size}")
         self.brush_size_label.pack(side=tk.LEFT, padx=5)
         
+        # Opacity control for annotation overlay
+        opacity_frame = ttk.Frame(tool_frame)
+        opacity_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(opacity_frame, text="Annotation Opacity:").pack(side=tk.LEFT, padx=5)
+        
+        self.opacity_var = tk.DoubleVar(value=self.annotation_opacity)
+        opacity_slider = ttk.Scale(
+            opacity_frame, 
+            from_=0.0, 
+            to=1.0,
+            orient=tk.HORIZONTAL, 
+            variable=self.opacity_var,
+            command=self.update_opacity
+        )
+        opacity_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        
+        # Add a label showing the current opacity percentage
+        self.opacity_label = ttk.Label(opacity_frame, text=f"{int(self.annotation_opacity * 100)}%")
+        self.opacity_label.pack(side=tk.LEFT, padx=5)
+        
         # Add a custom brush size entry for even larger sizes
         custom_brush_frame = ttk.Frame(tool_frame)
         custom_brush_frame.pack(fill=tk.X, pady=5)
@@ -974,6 +1171,9 @@ class TissueSegmentationTool:
         erase_button = ttk.Button(button_frame, text="Erase", command=self.set_eraser)
         erase_button.pack(side=tk.LEFT, padx=5)
         
+        auto_segment_button = ttk.Button(button_frame, text="Auto-Segment", command=self.show_auto_segment_dialog)
+        auto_segment_button.pack(side=tk.LEFT, padx=5)
+        
         # Segments selection
         segment_frame = ttk.LabelFrame(right_frame, text="Segments")
         segment_frame.pack(fill=tk.BOTH, expand=True, pady=5)
@@ -991,22 +1191,47 @@ class TissueSegmentationTool:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         
+        # Enable mouse wheel scrolling on the segment canvas
+        def on_mousewheel_segments(event):
+            # Windows uses delta, Unix systems use num
+            if hasattr(event, 'delta') and event.delta:
+                delta = event.delta
+            elif hasattr(event, 'num') and event.num:
+                delta = -120 if event.num == 5 else 120
+            else:
+                return
+            
+            canvas.yview_scroll(int(-1 * (delta / 120)), "units")
+        
+        # Bind mouse wheel to canvas and scrollable frame
+        canvas.bind("<MouseWheel>", on_mousewheel_segments)
+        scrollable_frame.bind("<MouseWheel>", on_mousewheel_segments)
+        
+        # Also bind to Button-4 and Button-5 for Linux/Unix systems
+        canvas.bind("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
+        canvas.bind("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
+        scrollable_frame.bind("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
+        scrollable_frame.bind("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
+        
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
         # Organized segment buttons
         self.segment_buttons = [None] * len(self.segments)
         
-        # Get all main features (segments without " - ")
-        main_features = [segment for segment in self.segments if " - " not in segment]
+        # Separate hierarchical features (Villi and Gland) from individual features
+        hierarchical_features = [segment for segment in self.segments if " - " not in segment and segment in self.segment_hierarchy and self.segment_hierarchy[segment]]
+        individual_features = [segment for segment in self.segments if " - " not in segment and (segment not in self.segment_hierarchy or not self.segment_hierarchy[segment])]
         
-        # For each main feature, create a group with its subfeatures
-        for feature_idx, main_feature in enumerate(main_features):
+        feature_counter = 0
+        
+        # First, add hierarchical features (Villi and Gland) with their subfeatures
+        for main_feature in hierarchical_features:
             main_idx = self.segments.index(main_feature)
             
             # Create a frame for the entire group
             feature_frame = ttk.LabelFrame(scrollable_frame, text="")
-            feature_frame.pack(fill=tk.X, pady=5, padx=3)
+            feature_frame.pack(fill=tk.X, pady=2, padx=3)
             
             # Add the main feature button
             color = self.segment_colors[main_feature]
@@ -1016,7 +1241,7 @@ class TissueSegmentationTool:
             main_feature_frame.pack(fill=tk.X, pady=2)
             
             # Prefix with "a.", "b.", etc. based on position
-            prefix = chr(97 + feature_idx) + "."
+            prefix = chr(97 + feature_counter) + "."
             prefix_label = ttk.Label(main_feature_frame, text=prefix, width=3)
             prefix_label.pack(side=tk.LEFT)
             
@@ -1072,6 +1297,40 @@ class TissueSegmentationTool:
                     segment_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
                     
                     self.segment_buttons[sub_idx] = color_button
+            
+            feature_counter += 1
+        
+        # Then, add all individual features
+        for feature in individual_features:
+            feature_idx = self.segments.index(feature)
+            
+            # Create frame for individual feature
+            individual_frame = ttk.Frame(scrollable_frame)
+            individual_frame.pack(fill=tk.X, pady=2, padx=3)
+            
+            # Add the feature button
+            color = self.segment_colors[feature]
+            color_hex = f'#{color[0]:02x}{color[1]:02x}{color[2]:02x}'
+            
+            # Prefix with "c.", "d.", etc. continuing from hierarchical features
+            prefix = chr(97 + feature_counter) + "."
+            prefix_label = ttk.Label(individual_frame, text=prefix, width=3)
+            prefix_label.pack(side=tk.LEFT)
+            
+            color_button = tk.Button(
+                individual_frame, 
+                bg=color_hex, 
+                width=2, 
+                height=1,
+                command=lambda idx=feature_idx: self.select_segment(idx)
+            )
+            color_button.pack(side=tk.LEFT, padx=5)
+            
+            segment_label = ttk.Label(individual_frame, text=feature, font=("Arial", 9))
+            segment_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            
+            self.segment_buttons[feature_idx] = color_button
+            feature_counter += 1
         
         # Save button
         save_frame = ttk.Frame(right_frame)
@@ -1250,6 +1509,14 @@ class TissueSegmentationTool:
         # Update the brush size label
         self.brush_size_label.config(text=f"{self.brush_size}")
     
+    def update_opacity(self, event=None):
+        """Update annotation opacity and refresh the display"""
+        self.annotation_opacity = self.opacity_var.get()
+        # Update the opacity label
+        self.opacity_label.config(text=f"{int(self.annotation_opacity * 100)}%")
+        # Refresh the image display with new opacity
+        self.update_image()
+    
     def select_segment(self, index):
         self.current_segment = index
         segment_name = self.segments[index]
@@ -1276,9 +1543,48 @@ class TissueSegmentationTool:
         original = self.original_images[self.current_image_index]
         mask = self.segmentation_masks[self.current_image_index]
         
+        # Debug: Check mask properties
+        mask_array = np.array(mask)
+        non_transparent_pixels = np.sum(mask_array[:, :, 3] > 0) if len(mask_array.shape) == 3 and mask_array.shape[2] == 4 else 0
+        print(f"Debug update_image: Mask size {mask.size}, non-transparent pixels: {non_transparent_pixels}")
+        if non_transparent_pixels > 0:
+            unique_colors = np.unique(mask_array.reshape(-1, mask_array.shape[-1]), axis=0)
+            print(f"Debug update_image: Unique colors in mask: {unique_colors[:10]}")  # Show first 10 unique colors
+        
+        # Apply opacity to the mask
+        if self.annotation_opacity < 1.0:
+            # Create a copy of the mask and adjust its alpha channel
+            mask_with_opacity = mask.copy()
+            mask_array = np.array(mask_with_opacity)
+            
+            # Apply opacity to non-transparent pixels
+            if len(mask_array.shape) == 3 and mask_array.shape[2] == 4:  # RGBA
+                # Only modify alpha where there are annotations (alpha > 0)
+                non_transparent = mask_array[:, :, 3] > 0
+                mask_array[non_transparent, 3] = (mask_array[non_transparent, 3] * self.annotation_opacity).astype(np.uint8)
+                mask_with_opacity = Image.fromarray(mask_array, 'RGBA')
+            else:
+                # Convert to RGBA if not already
+                mask_with_opacity = mask.convert('RGBA')
+                mask_array = np.array(mask_with_opacity)
+                non_transparent = mask_array[:, :, 3] > 0
+                mask_array[non_transparent, 3] = (mask_array[non_transparent, 3] * self.annotation_opacity).astype(np.uint8)
+                mask_with_opacity = Image.fromarray(mask_array, 'RGBA')
+        else:
+            mask_with_opacity = mask
+        
+        # Debug: Check mask after opacity
+        mask_with_opacity_array = np.array(mask_with_opacity)
+        non_transparent_after = np.sum(mask_with_opacity_array[:, :, 3] > 0) if len(mask_with_opacity_array.shape) == 3 and mask_with_opacity_array.shape[2] == 4 else 0
+        print(f"Debug update_image: After opacity ({self.annotation_opacity}), non-transparent pixels: {non_transparent_after}")
+        
         # Combine original image and segmentation mask
         combined = original.copy()
-        combined.paste(mask, (0, 0), mask)
+        combined.paste(mask_with_opacity, (0, 0), mask_with_opacity)
+        
+        # Debug: Check combined image
+        combined_array = np.array(combined)
+        print(f"Debug update_image: Combined image size: {combined.size}, mode: {combined.mode}")
         
         # Apply zoom
         width, height = combined.size
@@ -1316,6 +1622,8 @@ class TissueSegmentationTool:
         # Update slice label if multiple images
         if len(self.original_images) > 1 and hasattr(self, 'slice_label'):
             self.slice_label.config(text=f"Slice: {self.current_image_index + 1}/{len(self.original_images)}")
+        
+        print(f"Debug update_image: Image display updated")
     
     def previous_image(self):
         if self.current_image_index > 0:
@@ -1460,6 +1768,30 @@ class TissueSegmentationTool:
         self.canvas_x_offset = 0
         self.canvas_y_offset = 0
         
+        # Check if this file should be auto-segmented
+        should_auto_segment = (hasattr(self, 'auto_segment_model_ready') and 
+                              self.auto_segment_model_ready and 
+                              hasattr(self, 'auto_segment_queue') and 
+                              next_file in self.auto_segment_queue)
+        
+        # Debug: Show queue status
+        if hasattr(self, 'auto_segment_queue'):
+            print(f"Debug load_next_file: Queue has {len(self.auto_segment_queue)} files")
+            print(f"Debug load_next_file: Current file: {os.path.basename(next_file)}")
+            print(f"Debug load_next_file: File in queue: {next_file in self.auto_segment_queue}")
+            print(f"Debug load_next_file: Model ready: {getattr(self, 'auto_segment_model_ready', False)}")
+            print(f"Debug load_next_file: Should auto-segment: {should_auto_segment}")
+            
+            # Show remaining files in queue
+            if self.auto_segment_queue:
+                print("Debug load_next_file: Remaining files in queue:")
+                for i, file_path in enumerate(self.auto_segment_queue):
+                    print(f"  Queue[{i}]: {os.path.basename(file_path)}")
+            else:
+                print("Debug load_next_file: Queue is empty")
+        else:
+            print("Debug load_next_file: No auto_segment_queue found")
+        
         # Process file
         file_ext = os.path.splitext(next_file)[1].lower()
         if file_ext == '.nd2':
@@ -1474,8 +1806,15 @@ class TissueSegmentationTool:
         self.history = []
         self.history_index = -1
         
-        # Update UI
+        # Update UI first
         self.create_annotation_window()
+        
+        # Apply auto-segmentation AFTER UI is created
+        if should_auto_segment:
+            print(f"Debug: Applying auto-segmentation to {next_file}")
+            # Ensure UI is fully updated before applying auto-segmentation
+            self.root.update_idletasks()
+            self.root.after(100, self.apply_auto_segmentation_to_current_image)  # Small delay to ensure UI is ready
 
     def load_prev_file(self):
         """Load the previous image file in the directory"""
@@ -1803,6 +2142,657 @@ class TissueSegmentationTool:
         
         # Update UI
         self.create_annotation_window()
+
+    def auto_segment_slices(self, num_slices=1):
+        """Auto-segment subsequent slices based on current slice annotation"""
+        if not self.original_images or not self.segmentation_masks:
+            messagebox.showerror("Error", "No image loaded")
+            return
+        
+        if self.current_image_index + num_slices >= len(self.original_images):
+            messagebox.showerror("Error", "Not enough subsequent slices available")
+            return
+
+        try:
+            print(f"Debug: Starting auto-segmentation of {num_slices} slices from current index {self.current_image_index}")
+            
+            # Initialize model if not already done
+            if self.model is None:
+                num_classes = len(self.segments)  # One class per segment type
+                self.model = UNet(n_channels=3, n_classes=num_classes).to(self.device)
+            
+            # Define transform for tensor conversion (without resize since we manually resize)
+            transform_tensor_only = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
+            
+            # Prepare current slice as training data
+            current_img = self.original_images[self.current_image_index]
+            current_mask = self.segmentation_masks[self.current_image_index]
+            
+            # Convert to RGB mode to ensure 3 channels and resize to fixed size
+            current_img = current_img.convert('RGB').resize((256, 256), Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS)
+            
+            # Convert mask to training format - resize to match input
+            current_mask_resized = current_mask.resize((256, 256), Image.NEAREST)
+            mask_array = np.array(current_mask_resized)
+            
+            # Ensure mask_array is the right shape (256, 256, 4) for RGBA
+            if len(mask_array.shape) == 2:
+                # Convert grayscale to RGBA
+                mask_array = np.stack([mask_array, mask_array, mask_array, np.ones_like(mask_array) * 255], axis=2)
+            elif len(mask_array.shape) == 3 and mask_array.shape[2] == 3:
+                # Convert RGB to RGBA
+                alpha = np.ones((mask_array.shape[0], mask_array.shape[1], 1), dtype=mask_array.dtype) * 255
+                mask_array = np.concatenate([mask_array, alpha], axis=2)
+            
+            training_mask = np.zeros((256, 256), dtype=np.int64)
+            
+            # Debug: print mask array shape
+            logger.info(f"Mask array shape: {mask_array.shape}")
+            logger.info(f"Training mask shape: {training_mask.shape}")
+            
+            # Create class mapping for each segment color
+            for idx, segment in enumerate(self.segments):
+                color = self.segment_colors[segment]
+                # Create boolean mask for this color
+                if len(mask_array.shape) == 3 and mask_array.shape[2] >= 3:
+                    # RGBA or RGB mask - ensure we're working with the right dimensions
+                    color_match = np.all(mask_array[:, :, :3] == np.array(color[:3]), axis=2)
+                    logger.info(f"Boolean mask shape for {segment}: {color_match.shape}")
+                    
+                    # Verify dimensions match before applying
+                    if color_match.shape == training_mask.shape:
+                        training_mask[color_match] = idx
+                    else:
+                        logger.error(f"Shape mismatch: color_match {color_match.shape} vs training_mask {training_mask.shape}")
+                else:
+                    logger.warning(f"Unexpected mask array shape: {mask_array.shape}")
+                    continue
+            
+            # Convert to tensors - image is already resized to 256x256
+            img_tensor = transform_tensor_only(current_img).unsqueeze(0).to(self.device)
+            mask_tensor = torch.from_numpy(training_mask).unsqueeze(0).to(self.device)
+            
+            # Train model on current slice
+            self.model.train()
+            optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
+            criterion = nn.CrossEntropyLoss()
+            
+            # Quick fine-tuning
+            for epoch in range(10):  # Adjust number of iterations as needed
+                optimizer.zero_grad()
+                output = self.model(img_tensor)
+                loss = criterion(output, mask_tensor)
+                loss.backward()
+                optimizer.step()
+                if epoch % 5 == 0:
+                    print(f"Debug: Training epoch {epoch}, loss: {loss.item():.4f}")
+            
+            # Auto-segment subsequent slices
+            print(f"Debug: Applying auto-segmentation to {num_slices} subsequent slices...")
+            self.model.eval()
+            processed_slices = []
+            
+            with torch.no_grad():
+                for i in range(num_slices):
+                    next_idx = self.current_image_index + i + 1
+                    if next_idx >= len(self.original_images):
+                        print(f"Debug: Reached end of images at index {next_idx}")
+                        break
+                    
+                    print(f"Debug: Processing slice {next_idx} ({i+1}/{num_slices})")
+                    
+                    # Prepare next slice
+                    next_img = self.original_images[next_idx]
+                    original_size = next_img.size  # Store original size for later
+                    next_img = next_img.convert('RGB').resize((256, 256), Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS)
+                    img_tensor = transform_tensor_only(next_img).unsqueeze(0).to(self.device)
+                    
+                    # Generate prediction
+                    output = self.model(img_tensor)
+                    pred_mask = output.argmax(1).squeeze().cpu().numpy()
+                    
+                    # Convert prediction to RGBA mask at 256x256
+                    temp_mask = np.zeros((256, 256, 4), dtype=np.uint8)
+                    
+                    # Fill in predicted segments with visibility improvements
+                    pixels_filled = 0
+                    for idx, segment in enumerate(self.segments):
+                        color = self.segment_colors[segment]
+                        mask_pixels = pred_mask == idx
+                        pixel_count = np.sum(mask_pixels)
+                        if pixel_count > 0:
+                            # Special handling for black segments - make them more visible
+                            if color[:3] == (0, 0, 0):  # If it's black
+                                visible_color = (64, 64, 64, 255)
+                                temp_mask[mask_pixels] = visible_color
+                            else:
+                                temp_mask[mask_pixels] = color
+                            pixels_filled += pixel_count
+                    
+                    print(f"Debug: Slice {next_idx} - filled {pixels_filled} pixels")
+                    
+                    # Convert to PIL Image and resize back to original size
+                    pred_mask_img = Image.fromarray(temp_mask, mode='RGBA')
+                    pred_mask_resized = pred_mask_img.resize(original_size, Image.NEAREST)
+                    
+                    # Update segmentation mask
+                    self.segmentation_masks[next_idx] = pred_mask_resized
+                    processed_slices.append(next_idx)
+            
+            # Show success message with navigation instructions
+            if processed_slices:
+                slice_list = ", ".join([str(idx+1) for idx in processed_slices])  # Convert to 1-based indexing for user
+                messagebox.showinfo("Success", 
+                                  f"✓ Auto-segmented {len(processed_slices)} slices: {slice_list}\n\n"
+                                  f"Use 'Next Slice' and 'Previous Slice' buttons to view the results.\n"
+                                  f"Current slice: {self.current_image_index + 1}")
+                print(f"Debug: Successfully processed slices: {processed_slices}")
+            else:
+                messagebox.showwarning("Warning", "No slices were processed")
+            
+            # Update current image display
+            self.update_image()
+            
+        except Exception as e:
+            logger.error(f"Error in auto-segmentation: {str(e)}")
+            logger.error(traceback.format_exc())
+            messagebox.showerror("Error", f"Auto-segmentation failed: {str(e)}")
+
+    def auto_segment_folder_images(self, num_images=1):
+        """Auto-segment other images in the folder based on current image annotation"""
+        if not self.original_images or not self.segmentation_masks:
+            messagebox.showerror("Error", "No image loaded")
+            return
+    
+        if not self.directory_files or len(self.directory_files) <= 1:
+            messagebox.showerror("Error", "No other images available in folder")
+            return
+
+        progress_window = None
+        try:
+            # Create progress window
+            progress_window = tk.Toplevel(self.root)
+            progress_window.title("Folder Auto-segmentation")
+            progress_window.geometry("400x200")
+            progress_window.transient(self.root)
+            progress_window.grab_set()
+        
+            progress_label = ttk.Label(progress_window, text="Initializing...", wraplength=380)
+            progress_label.pack(pady=10)
+        
+            status_label = ttk.Label(progress_window, text="", wraplength=380)
+            status_label.pack(pady=5)
+        
+            progress_bar = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="determinate")
+            progress_bar.pack(pady=10)
+        
+            # Initialize model if not already done
+            if self.model is None:
+                progress_label.config(text="Initializing model...")
+                progress_window.update()
+            
+                num_classes = len(self.segments)
+                self.model = UNet(n_channels=3, n_classes=num_classes).to(self.device)
+        
+            # Define transform for tensor conversion
+            transform_tensor_only = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
+        
+            # Train on current image (same logic as auto_segment_slices)
+            current_img = self.original_images[self.current_image_index]
+            current_mask = self.segmentation_masks[self.current_image_index]
+        
+            current_img = current_img.convert('RGB').resize((256, 256), Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS)
+            current_mask_resized = current_mask.resize((256, 256), Image.NEAREST)
+            mask_array = np.array(current_mask_resized)
+        
+            if len(mask_array.shape) == 2:
+                mask_array = np.stack([mask_array, mask_array, mask_array, np.ones_like(mask_array) * 255], axis=2)
+            elif len(mask_array.shape) == 3 and mask_array.shape[2] == 3:
+                alpha = np.ones((mask_array.shape[0], mask_array.shape[1], 1), dtype=mask_array.dtype) * 255
+                mask_array = np.concatenate([mask_array, alpha], axis=2)
+        
+            training_mask = np.zeros((256, 256), dtype=np.int64)
+        
+            for idx, segment in enumerate(self.segments):
+                color = self.segment_colors[segment]
+                if len(mask_array.shape) == 3 and mask_array.shape[2] >= 3:
+                    color_match = np.all(mask_array[:, :, :3] == np.array(color[:3]), axis=2)
+                    if color_match.shape == training_mask.shape:
+                        training_mask[color_match] = idx
+        
+            img_tensor = transform_tensor_only(current_img).unsqueeze(0).to(self.device)
+            mask_tensor = torch.from_numpy(training_mask).unsqueeze(0).to(self.device)
+        
+            # Train model
+            progress_label.config(text="Training model...")
+            self.model.train()
+            optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
+            criterion = nn.CrossEntropyLoss()
+        
+            num_epochs = 50
+            progress_bar['maximum'] = num_epochs
+        
+            for epoch in range(num_epochs):
+                try:
+                    optimizer.zero_grad()
+                    output = self.model(img_tensor)
+                    loss = criterion(output, mask_tensor)
+                    loss.backward()
+                    optimizer.step()
+                
+                    # Safely update progress if window still exists
+                    if progress_window.winfo_exists():
+                        progress_bar['value'] = epoch + 1
+                        progress_label.config(text=f"Training: {epoch+1}/{num_epochs}")
+                        progress_window.update()
+                    else:
+                        # Window was closed, break out of training
+                        break
+                except tk.TclError:
+                    # Window was destroyed, break out of training
+                    break
+                except Exception as e:
+                    logger.error(f"Error during training epoch {epoch}: {str(e)}")
+                    break
+        
+            # Safely destroy progress window
+            if progress_window and progress_window.winfo_exists():
+                progress_window.destroy()
+            progress_window = None
+            
+            # Set up auto-segmentation queue for subsequent file loads
+            current_file = self.directory_files[self.current_file_idx]
+            # Get files that come AFTER the current file in directory order
+            remaining_files = self.directory_files[self.current_file_idx + 1:]
+
+            # Debug: Show all available files
+            print(f"Debug: Current file: {os.path.basename(current_file)}")
+            print(f"Debug: Current file index: {self.current_file_idx}")
+            print(f"Debug: Total files in directory: {len(self.directory_files)}")
+            print(f"Debug: Remaining files after current: {len(remaining_files)}")
+            for i, file_path in enumerate(remaining_files):
+                print(f"Debug: Remaining[{i}]: {os.path.basename(file_path)}")
+
+            # Ensure we don't exceed available files
+            actual_num_images = min(num_images, len(remaining_files))
+            self.auto_segment_queue = remaining_files[:actual_num_images]
+            self.auto_segment_model_ready = True
+
+            print(f"Debug: Requested {num_images} images, setting up queue with {len(self.auto_segment_queue)} files:")
+            for i, file_path in enumerate(self.auto_segment_queue):
+                print(f"Debug: Queue[{i}]: {os.path.basename(file_path)}")
+
+            messagebox.showinfo("Training Complete", 
+                              f"✓ Model trained successfully!\n\n"
+                              f"Queue set up with {len(self.auto_segment_queue)} images (requested: {num_images}).\n"
+                              f"Directory has {len(self.directory_files)} total files.\n\n"
+                              f"Now use 'Next File' button to navigate through the images.\n"
+                              f"Each image will be automatically segmented for your review and modification.\n\n"
+                              f"Files in queue: {[os.path.basename(f) for f in self.auto_segment_queue]}\n\n"
+                              f"Use 'Save Segmentations' to save any image you want to keep.")
+        
+        except Exception as e:
+            logger.error(f"Error in folder auto-segmentation: {str(e)}")
+            # Safely destroy progress window if it exists
+            if progress_window:
+                try:
+                    if progress_window.winfo_exists():
+                        progress_window.destroy()
+                except:
+                    pass
+            messagebox.showerror("Error", f"Folder auto-segmentation failed: {str(e)}")
+
+    def show_auto_segment_dialog(self):
+        """Show dialog to get number of slices to auto-segment"""
+        if not self.original_images or not self.segmentation_masks:
+            messagebox.showerror("Error", "No image loaded")
+            return
+        
+        # Create dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Auto-Segment Options")
+        dialog.geometry("500x400")  # Increased from 400x300
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Add content
+        frame = ttk.Frame(dialog, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(frame, text="Auto-Segmentation Options", font=("Arial", 12, "bold")).pack(pady=10)
+        
+        # Option selection
+        option_var = tk.StringVar(value="slices")
+        
+        # Option 1: Subsequent slices (for ND2 files)
+        slices_frame = ttk.LabelFrame(frame, text="Subsequent Slices")
+        slices_frame.pack(fill=tk.X, pady=5)
+        
+        slices_radio = ttk.Radiobutton(
+            slices_frame,
+            text="Apply to subsequent slices in current file",
+            variable=option_var,
+            value="slices"
+        )
+        slices_radio.pack(anchor=tk.W, padx=10, pady=5)
+        
+        # Calculate maximum available slices
+        max_slices = len(self.original_images) - self.current_image_index - 1
+        
+        slices_control_frame = ttk.Frame(slices_frame)
+        slices_control_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(slices_control_frame, text="Number of slices:").pack(side=tk.LEFT)
+        
+        slices_var = tk.StringVar(value="1")
+        slices_spinbox = ttk.Spinbox(
+            slices_control_frame,
+            from_=1,
+            to=max(1, max_slices),
+            textvariable=slices_var,
+            width=10
+        )
+        slices_spinbox.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(slices_control_frame, text=f"(Max: {max_slices})").pack(side=tk.LEFT, padx=5)
+        
+        # Option 2: Folder images
+        folder_frame = ttk.LabelFrame(frame, text="Folder Images")
+        folder_frame.pack(fill=tk.X, pady=5)
+        
+        folder_radio = ttk.Radiobutton(
+            folder_frame,
+            text="Apply to other images in folder",
+            variable=option_var,
+            value="folder"
+        )
+        folder_radio.pack(anchor=tk.W, padx=10, pady=5)
+        
+        folder_control_frame = ttk.Frame(folder_frame)
+        folder_control_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Calculate available folder images
+        available_files = 0
+        if self.directory_files:
+            available_files = len(self.directory_files) - 1  # Exclude current file
+        
+        ttk.Label(folder_control_frame, text="Number of images:").pack(side=tk.LEFT)
+        
+        folder_var = tk.StringVar(value="1")
+        folder_spinbox = ttk.Spinbox(
+            folder_control_frame,
+            from_=1,
+            to=max(1, available_files),
+            textvariable=folder_var,
+            width=10
+        )
+        folder_spinbox.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(folder_control_frame, text=f"(Available: {available_files})").pack(side=tk.LEFT, padx=5)
+        
+        # Buttons
+        button_frame = ttk.Frame(frame)
+        button_frame.pack(fill=tk.X, pady=20)
+        
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            command=dialog.destroy
+        ).pack(side=tk.LEFT, padx=5)
+        
+        def execute_auto_segment():
+            try:
+                if option_var.get() == "slices":
+                    num_slices = int(slices_var.get())
+                    dialog.destroy()
+                    self.auto_segment_slices(num_slices)
+                else:  # folder
+                    num_images = int(folder_var.get())
+                    dialog.destroy()
+                    self.auto_segment_folder_images(num_images)
+            except ValueError:
+                messagebox.showerror("Error", "Please enter valid numbers")
+        
+        ttk.Button(
+            button_frame,
+            text="Auto-Segment",
+            command=execute_auto_segment
+        ).pack(side=tk.RIGHT, padx=5)
+        
+        # Add diagnostic button for debugging
+        ttk.Button(
+            button_frame,
+            text="Debug Queue",
+            command=self.show_queue_diagnostic
+        ).pack(side=tk.RIGHT, padx=5)
+        
+        # Center dialog
+        dialog.update_idletasks()
+        width = dialog.winfo_width()
+        height = dialog.winfo_height()
+        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (height // 2)
+        dialog.geometry(f'{width}x{height}+{x}+{y}')
+
+    def apply_auto_segmentation_to_current_image(self):
+        """Apply auto-segmentation to the currently loaded image"""
+        try:
+            if not self.model or not self.auto_segment_model_ready:
+                print("Debug: Model not ready or auto_segment_model_ready is False")
+                return
+            
+            print("Debug: Starting auto-segmentation application...")
+            
+            # Define transform for tensor conversion
+            transform_tensor_only = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
+            
+            # Get current image
+            current_img = self.original_images[self.current_image_index]
+            original_size = current_img.size
+            print(f"Debug: Processing image of size {original_size}")
+            
+            # Resize for model processing
+            img_resized = current_img.convert('RGB').resize((256, 256), Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS)
+            img_tensor = transform_tensor_only(img_resized).unsqueeze(0).to(self.device)
+            
+            # Generate prediction
+            self.model.eval()
+            with torch.no_grad():
+                output = self.model(img_tensor)
+                pred_mask = output.argmax(1).squeeze().cpu().numpy()
+            
+            print(f"Debug: Prediction mask shape: {pred_mask.shape}, unique values: {np.unique(pred_mask)}")
+            
+            # Convert prediction to RGBA mask at 256x256
+            temp_mask = np.zeros((256, 256, 4), dtype=np.uint8)
+            
+            # Fill in predicted segments
+            pixels_filled = 0
+            for idx, segment in enumerate(self.segments):
+                color = self.segment_colors[segment]
+                mask_pixels = pred_mask == idx
+                pixel_count = np.sum(mask_pixels)
+                if pixel_count > 0:
+                    # Special handling for black segments - make them more visible
+                    if color[:3] == (0, 0, 0):  # If it's black
+                        # Change black to dark gray for better visibility
+                        visible_color = (64, 64, 64, 255)
+                        print(f"Debug: Converting black segment '{segment}' to dark gray for visibility")
+                        temp_mask[mask_pixels] = visible_color
+                    else:
+                        temp_mask[mask_pixels] = color
+                    print(f"Debug: Segment '{segment}' (idx {idx}): {pixel_count} pixels with color {color}")
+                    pixels_filled += pixel_count
+            
+            print(f"Debug: Total pixels filled: {pixels_filled}")
+            
+            # Convert to PIL Image and resize back to original size
+            pred_mask_img = Image.fromarray(temp_mask, mode='RGBA')
+            pred_mask_resized = pred_mask_img.resize(original_size, Image.NEAREST)
+            
+            # Update segmentation mask
+            self.segmentation_masks[self.current_image_index] = pred_mask_resized
+            print(f"Debug: Updated segmentation mask for image index {self.current_image_index}")
+            
+            # Temporarily set full opacity for auto-segmented images to make them more visible
+            original_opacity = self.annotation_opacity
+            self.annotation_opacity = 1.0
+            print(f"Debug: Temporarily setting opacity to 100% (was {original_opacity*100}%)")
+            
+            # Update window title to show auto-segmented status
+            base_name = os.path.basename(self.image_paths[0])
+            queue_remaining = len(self.auto_segment_queue) if hasattr(self, 'auto_segment_queue') else 0
+            self.root.title(f"Tissue Segmentation Tool - Auto-Segmented: {base_name} (Queue: {queue_remaining} remaining)")
+            
+            # Update status label if it exists
+            if hasattr(self, 'status_label'):
+                self.status_label.config(text="✓ Auto-Segmented")
+            
+            # Update the display
+            self.update_image()
+            print(f"Debug: Display updated for auto-segmented image: {base_name}")
+            
+            # Remove this file from the auto-segmentation queue since it's been processed
+            current_file = self.image_paths[0]
+            print(f"Debug: Checking if {os.path.basename(current_file)} should be removed from queue")
+            print(f"Debug: Current file full path: {current_file}")
+
+            if hasattr(self, 'auto_segment_queue') and current_file in self.auto_segment_queue:
+                print(f"Debug: Queue before removal has {len(self.auto_segment_queue)} files:")
+                for i, file_path in enumerate(self.auto_segment_queue):
+                    print(f"  Queue[{i}]: {os.path.basename(file_path)} -> {file_path}")
+                
+                self.auto_segment_queue.remove(current_file)
+                print(f"Debug: Removed {os.path.basename(current_file)} from queue. Queue now has {len(self.auto_segment_queue)} files")
+                
+                if self.auto_segment_queue:
+                    print("Debug: Remaining files in queue:")
+                    for i, file_path in enumerate(self.auto_segment_queue):
+                        print(f"  Queue[{i}]: {os.path.basename(file_path)} -> {file_path}")
+                else:
+                    print("Debug: Queue is now empty")
+                
+                # If queue is empty, disable auto-segmentation
+                if not self.auto_segment_queue:
+                    self.auto_segment_model_ready = False
+                    print("Debug: Queue is empty, disabling auto-segmentation")
+                
+                # Show notification about auto-segmentation
+                if self.auto_segment_queue:
+                    messagebox.showinfo("Auto-Segmentation Applied", 
+                                      f"✓ Auto-segmentation applied to: {base_name}\n\n"
+                                      f"Remaining files in queue: {len(self.auto_segment_queue)}\n"
+                                      f"Click 'Next File' to continue with auto-segmentation.")
+                else:
+                    messagebox.showinfo("Auto-Segmentation Complete", 
+                                      f"✓ Auto-segmentation applied to: {base_name}\n\n"
+                                      f"All files in the queue have been processed.\n"
+                                      f"Auto-segmentation is now disabled.")
+            else:
+                print(f"Debug: File {os.path.basename(current_file)} not found in queue or queue doesn't exist")
+                print(f"Debug: Looking for exact match: {current_file}")
+                if hasattr(self, 'auto_segment_queue'):
+                    print(f"Debug: Current queue has {len(self.auto_segment_queue)} files")
+                    for i, file_path in enumerate(self.auto_segment_queue):
+                        print(f"  Queue[{i}]: {os.path.basename(file_path)} -> {file_path}")
+                        print(f"    Match check: {current_file == file_path}")
+                else:
+                    print("Debug: No auto_segment_queue attribute found")
+            
+            # Restore original opacity after a delay
+            self.root.after(1000, lambda: setattr(self, 'annotation_opacity', original_opacity))
+            
+        except Exception as e:
+            logger.error(f"Error applying auto-segmentation: {str(e)}")
+            print(f"Debug Error: Could not apply auto-segmentation: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    def show_queue_diagnostic(self):
+        """Show diagnostic information about the current queue and directory"""
+        diagnostic_window = tk.Toplevel(self.root)
+        diagnostic_window.title("Queue Diagnostic")
+        diagnostic_window.geometry("600x400")
+        diagnostic_window.transient(self.root)
+        
+        frame = ttk.Frame(diagnostic_window, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Create text widget with scrollbar
+        text_frame = ttk.Frame(frame)
+        text_frame.pack(fill=tk.BOTH, expand=True)
+        
+        scrollbar = ttk.Scrollbar(text_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        text = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set)
+        text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=text.yview)
+        
+        # Add diagnostic information
+        text.insert(tk.END, "=== QUEUE DIAGNOSTIC INFORMATION ===\n\n")
+        
+        # Directory information
+        text.insert(tk.END, f"Current Directory: {self.current_directory}\n")
+        text.insert(tk.END, f"Current File Index: {self.current_file_idx}\n")
+        text.insert(tk.END, f"Total Files in Directory: {len(self.directory_files) if hasattr(self, 'directory_files') else 'None'}\n\n")
+        
+        # List all files in directory
+        if hasattr(self, 'directory_files') and self.directory_files:
+            text.insert(tk.END, "All Files in Directory:\n")
+            for i, file_path in enumerate(self.directory_files):
+                current_marker = " <- CURRENT" if i == self.current_file_idx else ""
+                text.insert(tk.END, f"  [{i}] {os.path.basename(file_path)}{current_marker}\n")
+            text.insert(tk.END, "\n")
+        
+        # Queue information
+        text.insert(tk.END, f"Auto-Segment Model Ready: {getattr(self, 'auto_segment_model_ready', False)}\n")
+        text.insert(tk.END, f"Queue Size: {len(self.auto_segment_queue) if hasattr(self, 'auto_segment_queue') else 'No queue'}\n\n")
+        
+        # List queue contents
+        if hasattr(self, 'auto_segment_queue') and self.auto_segment_queue:
+            text.insert(tk.END, "Files in Auto-Segmentation Queue:\n")
+            for i, file_path in enumerate(self.auto_segment_queue):
+                text.insert(tk.END, f"  [{i}] {os.path.basename(file_path)}\n")
+                text.insert(tk.END, f"      Full path: {file_path}\n")
+            text.insert(tk.END, "\n")
+        else:
+            text.insert(tk.END, "No files in auto-segmentation queue\n\n")
+        
+        # Current image information
+        text.insert(tk.END, f"Current Image Path: {self.image_paths[0] if self.image_paths else 'None'}\n")
+        text.insert(tk.END, f"Number of Loaded Images: {len(self.original_images)}\n")
+        text.insert(tk.END, f"Current Image Index: {self.current_image_index}\n\n")
+        
+        # Next file prediction
+        if hasattr(self, 'directory_files') and self.directory_files:
+            if self.current_file_idx < len(self.directory_files) - 1:
+                next_file = self.directory_files[self.current_file_idx + 1]
+                text.insert(tk.END, f"Next File Would Be: {os.path.basename(next_file)}\n")
+                if hasattr(self, 'auto_segment_queue'):
+                    in_queue = next_file in self.auto_segment_queue
+                    text.insert(tk.END, f"Next File in Queue: {in_queue}\n")
+                    if in_queue:
+                        text.insert(tk.END, "✓ Next file SHOULD be auto-segmented\n")
+                    else:
+                        text.insert(tk.END, "✗ Next file will NOT be auto-segmented\n")
+            else:
+                text.insert(tk.END, "No more files available\n")
+        
+        text.config(state=tk.DISABLED)
+        
+        # Close button
+        close_button = ttk.Button(frame, text="Close", command=diagnostic_window.destroy)
+        close_button.pack(pady=10)
 
 if __name__ == "__main__":
     root = tk.Tk()
