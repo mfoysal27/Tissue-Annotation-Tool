@@ -3817,3 +3817,528 @@ RuntimeError: input and target batch or spatial sizes don't match: target [1, 25
 2025-06-16 10:34:35,338 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
 2025-06-16 10:34:37,936 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
 2025-06-16 10:34:37,936 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:41:49,115 - matplotlib - DEBUG - matplotlib data path: C:\Users\m289808\OneDrive - Mayo Clinic\Gut NeuroScience AI\Feature_Learning\venv_RL\lib\site-packages\matplotlib\mpl-data
+2025-06-16 10:41:49,119 - matplotlib - DEBUG - CONFIGDIR=C:\Users\m289808\.matplotlib
+2025-06-16 10:41:49,120 - matplotlib - DEBUG - interactive is False
+2025-06-16 10:41:49,120 - matplotlib - DEBUG - platform is win32
+2025-06-16 10:41:49,170 - matplotlib - DEBUG - CACHEDIR=C:\Users\m289808\.matplotlib
+2025-06-16 10:41:49,173 - matplotlib.font_manager - DEBUG - Using fontManager instance from C:\Users\m289808\.matplotlib\fontlist-v390.json
+2025-06-16 10:41:49,740 - TissueSegmentationTool - INFO - Successfully imported nd2reader
+2025-06-16 10:41:49,769 - TissueSegmentationTool - INFO - Successfully imported nd2
+2025-06-16 10:41:53,224 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:41:53,224 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:41:59,892 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:41:59,893 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 1699
+2025-06-16 10:42:19,790 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:42:19,791 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:42:23,050 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:42:23,050 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:42:27,329 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:42:27,330 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:42:33,538 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:42:33,538 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:42:38,403 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:42:38,404 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:46:09,701 - matplotlib - DEBUG - matplotlib data path: C:\Users\m289808\OneDrive - Mayo Clinic\Gut NeuroScience AI\Feature_Learning\venv_RL\lib\site-packages\matplotlib\mpl-data
+2025-06-16 10:46:09,705 - matplotlib - DEBUG - CONFIGDIR=C:\Users\m289808\.matplotlib
+2025-06-16 10:46:09,706 - matplotlib - DEBUG - interactive is False
+2025-06-16 10:46:09,706 - matplotlib - DEBUG - platform is win32
+2025-06-16 10:46:09,760 - matplotlib - DEBUG - CACHEDIR=C:\Users\m289808\.matplotlib
+2025-06-16 10:46:09,763 - matplotlib.font_manager - DEBUG - Using fontManager instance from C:\Users\m289808\.matplotlib\fontlist-v390.json
+2025-06-16 10:46:10,309 - TissueSegmentationTool - INFO - Successfully imported nd2reader
+2025-06-16 10:46:10,338 - TissueSegmentationTool - INFO - Successfully imported nd2
+2025-06-16 10:46:15,179 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:46:15,179 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:46:18,626 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:46:18,626 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 1699
+2025-06-16 10:46:38,076 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:46:38,076 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:46:41,697 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:46:41,697 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:47:27,417 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:47:27,418 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:47:31,376 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:47:31,376 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:47:36,046 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:47:36,047 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:47:38,633 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:47:38,633 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:47:42,878 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:47:42,878 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:47:57,772 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:47:57,772 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:48:07,163 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:48:07,163 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:48:26,995 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:48:26,995 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:49:54,651 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:49:54,651 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:49:57,962 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:49:57,962 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:50:05,727 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:50:05,728 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 10:50:10,023 - PIL.PngImagePlugin - DEBUG - STREAM b'IHDR' 16 13
+2025-06-16 10:50:10,023 - PIL.PngImagePlugin - DEBUG - STREAM b'IDAT' 41 25252
+2025-06-16 15:44:25,412 - matplotlib - DEBUG - matplotlib data path: C:\Users\m289808\OneDrive - Mayo Clinic\Gut NeuroScience AI\Feature_Learning\venv_RL\lib\site-packages\matplotlib\mpl-data
+2025-06-16 15:44:25,440 - matplotlib - DEBUG - CONFIGDIR=C:\Users\m289808\.matplotlib
+2025-06-16 15:44:25,440 - matplotlib - DEBUG - interactive is False
+2025-06-16 15:44:25,442 - matplotlib - DEBUG - platform is win32
+2025-06-16 15:44:25,513 - matplotlib - DEBUG - CACHEDIR=C:\Users\m289808\.matplotlib
+2025-06-16 15:44:25,527 - matplotlib.font_manager - DEBUG - Using fontManager instance from C:\Users\m289808\.matplotlib\fontlist-v390.json
+2025-06-16 15:44:27,605 - TissueSegmentationTool - INFO - Successfully imported nd2reader
+2025-06-16 15:44:27,664 - TissueSegmentationTool - INFO - Successfully imported nd2
+2025-06-16 15:44:31,807 - TissueSegmentationTool - INFO - Starting ND2 file loading: //mfad/researchmn/PHYSIO/SZURSZEWSKI/SHARED/Muaz/Machine learning project/Supervised/Free testing/4358jej 1_2 ax1_crop 4.nd2
+2025-06-16 15:44:31,808 - TissueSegmentationTool - INFO - Starting to process ND2 file: //mfad/researchmn/PHYSIO/SZURSZEWSKI/SHARED/Muaz/Machine learning project/Supervised/Free testing/4358jej 1_2 ax1_crop 4.nd2
+2025-06-16 15:44:31,834 - TissueSegmentationTool - INFO - ND2 file opened with nd2 package. Available sizes: {'P': 36, 'Y': 301, 'X': 317}
+2025-06-16 15:44:31,834 - TissueSegmentationTool - INFO - Found 36 frames in dimension P
+2025-06-16 15:44:33,249 - TissueSegmentationTool - INFO - Frame selection cancelled or unsuccessful
+2025-06-16 15:44:38,980 - TissueSegmentationTool - INFO - Starting ND2 file loading: //mfad/researchmn/PHYSIO/SZURSZEWSKI/SHARED/Muaz/Machine learning project/Supervised/Free testing/4358jej 1_2 ax1_crop 1.nd2
+2025-06-16 15:44:38,980 - TissueSegmentationTool - INFO - Starting to process ND2 file: //mfad/researchmn/PHYSIO/SZURSZEWSKI/SHARED/Muaz/Machine learning project/Supervised/Free testing/4358jej 1_2 ax1_crop 1.nd2
+2025-06-16 15:44:39,013 - TissueSegmentationTool - INFO - ND2 file opened with nd2 package. Available sizes: {'P': 36, 'Y': 207, 'X': 181}
+2025-06-16 15:44:39,014 - TissueSegmentationTool - INFO - Found 36 frames in dimension P
+2025-06-16 15:44:40,304 - TissueSegmentationTool - ERROR - Error loading frame 0: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,305 - TissueSegmentationTool - ERROR - Error loading frame 1: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,305 - TissueSegmentationTool - ERROR - Error loading frame 2: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,306 - TissueSegmentationTool - ERROR - Error loading frame 3: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,306 - TissueSegmentationTool - ERROR - Error loading frame 4: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,307 - TissueSegmentationTool - ERROR - Error loading frame 5: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,307 - TissueSegmentationTool - ERROR - Error loading frame 6: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,307 - TissueSegmentationTool - ERROR - Error loading frame 7: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,308 - TissueSegmentationTool - ERROR - Error loading frame 8: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,309 - TissueSegmentationTool - ERROR - Error loading frame 9: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,309 - TissueSegmentationTool - ERROR - Error loading frame 10: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,310 - TissueSegmentationTool - ERROR - Error loading frame 11: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,310 - TissueSegmentationTool - ERROR - Error loading frame 12: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,310 - TissueSegmentationTool - ERROR - Error loading frame 13: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,310 - TissueSegmentationTool - ERROR - Error loading frame 14: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,311 - TissueSegmentationTool - ERROR - Error loading frame 15: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,311 - TissueSegmentationTool - ERROR - Error loading frame 16: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,311 - TissueSegmentationTool - ERROR - Error loading frame 17: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,312 - TissueSegmentationTool - ERROR - Error loading frame 18: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,312 - TissueSegmentationTool - ERROR - Error loading frame 19: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,312 - TissueSegmentationTool - ERROR - Error loading frame 20: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,312 - TissueSegmentationTool - ERROR - Error loading frame 21: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,313 - TissueSegmentationTool - ERROR - Error loading frame 22: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,313 - TissueSegmentationTool - ERROR - Error loading frame 23: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,313 - TissueSegmentationTool - ERROR - Error loading frame 24: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,313 - TissueSegmentationTool - ERROR - Error loading frame 25: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,314 - TissueSegmentationTool - ERROR - Error loading frame 26: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,314 - TissueSegmentationTool - ERROR - Error loading frame 27: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,314 - TissueSegmentationTool - ERROR - Error loading frame 28: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,314 - TissueSegmentationTool - ERROR - Error loading frame 29: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,315 - TissueSegmentationTool - ERROR - Error loading frame 30: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,315 - TissueSegmentationTool - ERROR - Error loading frame 31: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,316 - TissueSegmentationTool - ERROR - Error loading frame 32: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,316 - TissueSegmentationTool - ERROR - Error loading frame 33: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,316 - TissueSegmentationTool - ERROR - Error loading frame 34: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,316 - TissueSegmentationTool - ERROR - Error loading frame 35: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:44:40,795 - TissueSegmentationTool - INFO - Raw data shape: (36, 207, 181)
+2025-06-16 15:44:40,796 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,796 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=246.0, 99%=2344.3399999999965
+2025-06-16 15:44:40,797 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,797 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,797 - TissueSegmentationTool - INFO - Successfully loaded raw slice 0, size: (181, 207)
+2025-06-16 15:44:40,797 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,798 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=292.0, 99%=2235.679999999993
+2025-06-16 15:44:40,798 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,798 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,798 - TissueSegmentationTool - INFO - Successfully loaded raw slice 1, size: (181, 207)
+2025-06-16 15:44:40,798 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,799 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=192.0, 99%=2214.3399999999965
+2025-06-16 15:44:40,799 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,799 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,799 - TissueSegmentationTool - INFO - Successfully loaded raw slice 2, size: (181, 207)
+2025-06-16 15:44:40,799 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,800 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=268.0, 99%=1912.0
+2025-06-16 15:44:40,800 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,800 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,800 - TissueSegmentationTool - INFO - Successfully loaded raw slice 3, size: (181, 207)
+2025-06-16 15:44:40,800 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,801 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=249.0, 99%=1925.0
+2025-06-16 15:44:40,801 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,801 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,801 - TissueSegmentationTool - INFO - Successfully loaded raw slice 4, size: (181, 207)
+2025-06-16 15:44:40,801 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,802 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=202.66000000000003, 99%=1668.3399999999965
+2025-06-16 15:44:40,802 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,802 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,802 - TissueSegmentationTool - INFO - Successfully loaded raw slice 5, size: (181, 207)
+2025-06-16 15:44:40,803 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,803 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=359.0, 99%=1411.0
+2025-06-16 15:44:40,803 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,803 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,803 - TissueSegmentationTool - INFO - Successfully loaded raw slice 6, size: (181, 207)
+2025-06-16 15:44:40,804 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,804 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=412.66, 99%=1430.3399999999965
+2025-06-16 15:44:40,804 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,804 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,804 - TissueSegmentationTool - INFO - Successfully loaded raw slice 7, size: (181, 207)
+2025-06-16 15:44:40,805 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,805 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=295.0, 99%=1461.0
+2025-06-16 15:44:40,805 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,806 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,806 - TissueSegmentationTool - INFO - Successfully loaded raw slice 8, size: (181, 207)
+2025-06-16 15:44:40,806 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,807 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=185.0, 99%=1689.0
+2025-06-16 15:44:40,807 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,807 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,807 - TissueSegmentationTool - INFO - Successfully loaded raw slice 9, size: (181, 207)
+2025-06-16 15:44:40,808 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,808 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=246.0, 99%=2098.0
+2025-06-16 15:44:40,809 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,809 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,809 - TissueSegmentationTool - INFO - Successfully loaded raw slice 10, size: (181, 207)
+2025-06-16 15:44:40,809 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,809 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=203.0, 99%=2164.0
+2025-06-16 15:44:40,810 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,810 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,810 - TissueSegmentationTool - INFO - Successfully loaded raw slice 11, size: (181, 207)
+2025-06-16 15:44:40,810 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,810 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=309.0, 99%=2093.0
+2025-06-16 15:44:40,811 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,811 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,811 - TissueSegmentationTool - INFO - Successfully loaded raw slice 12, size: (181, 207)
+2025-06-16 15:44:40,811 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,812 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=242.0, 99%=1823.0
+2025-06-16 15:44:40,812 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,812 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,812 - TissueSegmentationTool - INFO - Successfully loaded raw slice 13, size: (181, 207)
+2025-06-16 15:44:40,812 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,813 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=268.0, 99%=1413.0
+2025-06-16 15:44:40,813 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,813 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,813 - TissueSegmentationTool - INFO - Successfully loaded raw slice 14, size: (181, 207)
+2025-06-16 15:44:40,813 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,814 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=358.0, 99%=1457.3399999999965
+2025-06-16 15:44:40,814 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,814 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,814 - TissueSegmentationTool - INFO - Successfully loaded raw slice 15, size: (181, 207)
+2025-06-16 15:44:40,814 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,815 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=197.0, 99%=1572.0
+2025-06-16 15:44:40,815 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,815 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,815 - TissueSegmentationTool - INFO - Successfully loaded raw slice 16, size: (181, 207)
+2025-06-16 15:44:40,815 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,816 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=154.0, 99%=1171.0
+2025-06-16 15:44:40,816 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,816 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,816 - TissueSegmentationTool - INFO - Successfully loaded raw slice 17, size: (181, 207)
+2025-06-16 15:44:40,817 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,817 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=152.0, 99%=1032.0
+2025-06-16 15:44:40,817 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,817 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,817 - TissueSegmentationTool - INFO - Successfully loaded raw slice 18, size: (181, 207)
+2025-06-16 15:44:40,818 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,818 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=150.0, 99%=1287.3399999999965
+2025-06-16 15:44:40,818 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,818 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,818 - TissueSegmentationTool - INFO - Successfully loaded raw slice 19, size: (181, 207)
+2025-06-16 15:44:40,819 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,819 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=202.0, 99%=1206.0
+2025-06-16 15:44:40,819 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,819 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,819 - TissueSegmentationTool - INFO - Successfully loaded raw slice 20, size: (181, 207)
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=162.0, 99%=1150.0
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Successfully loaded raw slice 21, size: (181, 207)
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=169.0, 99%=1468.0
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Successfully loaded raw slice 22, size: (181, 207)
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=616.0, 99%=1625.0
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Successfully loaded raw slice 23, size: (181, 207)
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=711.0, 99%=1650.0
+2025-06-16 15:44:40,820 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,824 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,824 - TissueSegmentationTool - INFO - Successfully loaded raw slice 24, size: (181, 207)
+2025-06-16 15:44:40,824 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,824 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=224.0, 99%=1361.0
+2025-06-16 15:44:40,824 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,824 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,824 - TissueSegmentationTool - INFO - Successfully loaded raw slice 25, size: (181, 207)
+2025-06-16 15:44:40,824 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=306.0, 99%=1157.0
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Successfully loaded raw slice 26, size: (181, 207)
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=186.0, 99%=1136.0
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Successfully loaded raw slice 27, size: (181, 207)
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=137.0, 99%=872.3399999999965
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Successfully loaded raw slice 28, size: (181, 207)
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=134.0, 99%=202.0
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Successfully loaded raw slice 29, size: (181, 207)
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=133.0, 99%=198.0
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Successfully loaded raw slice 30, size: (181, 207)
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=134.0, 99%=198.0
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Successfully loaded raw slice 31, size: (181, 207)
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=134.0, 99%=201.0
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,826 - TissueSegmentationTool - INFO - Successfully loaded raw slice 32, size: (181, 207)
+2025-06-16 15:44:40,834 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,834 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=139.0, 99%=1398.3399999999965
+2025-06-16 15:44:40,834 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,834 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,834 - TissueSegmentationTool - INFO - Successfully loaded raw slice 33, size: (181, 207)
+2025-06-16 15:44:40,834 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,834 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=330.66, 99%=1438.0
+2025-06-16 15:44:40,834 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,834 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,834 - TissueSegmentationTool - INFO - Successfully loaded raw slice 34, size: (181, 207)
+2025-06-16 15:44:40,836 - TissueSegmentationTool - INFO - Processing array with shape (207, 181) and dtype uint16
+2025-06-16 15:44:40,836 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=167.0, 99%=1268.0
+2025-06-16 15:44:40,836 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:44:40,836 - TissueSegmentationTool - INFO - Successfully created PIL image with size (181, 207)
+2025-06-16 15:44:40,836 - TissueSegmentationTool - INFO - Successfully loaded raw slice 35, size: (181, 207)
+2025-06-16 15:55:23,990 - matplotlib - DEBUG - matplotlib data path: C:\Users\m289808\OneDrive - Mayo Clinic\Gut NeuroScience AI\Feature_Learning\venv_RL\lib\site-packages\matplotlib\mpl-data
+2025-06-16 15:55:23,990 - matplotlib - DEBUG - CONFIGDIR=C:\Users\m289808\.matplotlib
+2025-06-16 15:55:23,990 - matplotlib - DEBUG - interactive is False
+2025-06-16 15:55:23,990 - matplotlib - DEBUG - platform is win32
+2025-06-16 15:55:24,052 - matplotlib - DEBUG - CACHEDIR=C:\Users\m289808\.matplotlib
+2025-06-16 15:55:24,055 - matplotlib.font_manager - DEBUG - Using fontManager instance from C:\Users\m289808\.matplotlib\fontlist-v390.json
+2025-06-16 15:55:24,580 - TissueSegmentationTool - INFO - Successfully imported nd2reader
+2025-06-16 15:55:24,606 - TissueSegmentationTool - INFO - Successfully imported nd2
+2025-06-16 15:55:27,679 - TissueSegmentationTool - INFO - Starting ND2 file loading: //mfad/researchmn/PHYSIO/SZURSZEWSKI/SHARED/Muaz/Machine learning project/Supervised/Free testing/4358jej 1_2 ax1_crop 2.nd2
+2025-06-16 15:55:27,679 - TissueSegmentationTool - INFO - Starting to process ND2 file: //mfad/researchmn/PHYSIO/SZURSZEWSKI/SHARED/Muaz/Machine learning project/Supervised/Free testing/4358jej 1_2 ax1_crop 2.nd2
+2025-06-16 15:55:27,693 - TissueSegmentationTool - INFO - ND2 file opened with nd2 package. Available sizes: {'P': 36, 'Y': 247, 'X': 199}
+2025-06-16 15:55:27,693 - TissueSegmentationTool - INFO - Found 36 frames in dimension P
+2025-06-16 15:55:28,630 - TissueSegmentationTool - ERROR - Error loading frame 0: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,631 - TissueSegmentationTool - ERROR - Error loading frame 1: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,631 - TissueSegmentationTool - ERROR - Error loading frame 2: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,632 - TissueSegmentationTool - ERROR - Error loading frame 3: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,632 - TissueSegmentationTool - ERROR - Error loading frame 4: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,633 - TissueSegmentationTool - ERROR - Error loading frame 5: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,634 - TissueSegmentationTool - ERROR - Error loading frame 6: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,634 - TissueSegmentationTool - ERROR - Error loading frame 7: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,635 - TissueSegmentationTool - ERROR - Error loading frame 8: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,635 - TissueSegmentationTool - ERROR - Error loading frame 9: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,636 - TissueSegmentationTool - ERROR - Error loading frame 10: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,636 - TissueSegmentationTool - ERROR - Error loading frame 11: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,637 - TissueSegmentationTool - ERROR - Error loading frame 12: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,637 - TissueSegmentationTool - ERROR - Error loading frame 13: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,637 - TissueSegmentationTool - ERROR - Error loading frame 14: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,638 - TissueSegmentationTool - ERROR - Error loading frame 15: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,638 - TissueSegmentationTool - ERROR - Error loading frame 16: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,639 - TissueSegmentationTool - ERROR - Error loading frame 17: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,639 - TissueSegmentationTool - ERROR - Error loading frame 18: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,639 - TissueSegmentationTool - ERROR - Error loading frame 19: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,640 - TissueSegmentationTool - ERROR - Error loading frame 20: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,640 - TissueSegmentationTool - ERROR - Error loading frame 21: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,641 - TissueSegmentationTool - ERROR - Error loading frame 22: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,641 - TissueSegmentationTool - ERROR - Error loading frame 23: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,642 - TissueSegmentationTool - ERROR - Error loading frame 24: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,642 - TissueSegmentationTool - ERROR - Error loading frame 25: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,642 - TissueSegmentationTool - ERROR - Error loading frame 26: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,643 - TissueSegmentationTool - ERROR - Error loading frame 27: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,643 - TissueSegmentationTool - ERROR - Error loading frame 28: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,644 - TissueSegmentationTool - ERROR - Error loading frame 29: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,644 - TissueSegmentationTool - ERROR - Error loading frame 30: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,644 - TissueSegmentationTool - ERROR - Error loading frame 31: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,644 - TissueSegmentationTool - ERROR - Error loading frame 32: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,644 - TissueSegmentationTool - ERROR - Error loading frame 33: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,644 - TissueSegmentationTool - ERROR - Error loading frame 34: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,646 - TissueSegmentationTool - ERROR - Error loading frame 35: 'ND2File' object has no attribute 'read_image'
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Raw data shape: (36, 247, 199)
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=279.0, 99%=1605.0
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Successfully loaded raw slice 0, size: (199, 247)
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=281.0, 99%=2294.479999999996
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Successfully loaded raw slice 1, size: (199, 247)
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=234.0, 99%=1964.0
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Successfully loaded raw slice 2, size: (199, 247)
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=311.0, 99%=2116.0
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Successfully loaded raw slice 3, size: (199, 247)
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=365.0, 99%=1648.0
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Successfully loaded raw slice 4, size: (199, 247)
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=178.0, 99%=1729.479999999996
+2025-06-16 15:55:28,737 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Successfully loaded raw slice 5, size: (199, 247)
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=442.52, 99%=1497.0
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Successfully loaded raw slice 6, size: (199, 247)
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=248.0, 99%=1501.0
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Successfully loaded raw slice 7, size: (199, 247)
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=254.0, 99%=1614.0
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Successfully loaded raw slice 8, size: (199, 247)
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=285.0, 99%=1633.0
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Successfully loaded raw slice 9, size: (199, 247)
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=249.0, 99%=1893.0
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Successfully loaded raw slice 10, size: (199, 247)
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=317.0, 99%=2544.479999999996
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Successfully loaded raw slice 11, size: (199, 247)
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=352.0, 99%=2237.959999999992
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,752 - TissueSegmentationTool - INFO - Successfully loaded raw slice 12, size: (199, 247)
+2025-06-16 15:55:28,768 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,769 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=232.0, 99%=1738.479999999996
+2025-06-16 15:55:28,769 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,769 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,769 - TissueSegmentationTool - INFO - Successfully loaded raw slice 13, size: (199, 247)
+2025-06-16 15:55:28,770 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,770 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=198.0, 99%=1393.0
+2025-06-16 15:55:28,771 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,771 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,771 - TissueSegmentationTool - INFO - Successfully loaded raw slice 14, size: (199, 247)
+2025-06-16 15:55:28,773 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,773 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=200.0, 99%=1593.0
+2025-06-16 15:55:28,773 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,773 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,773 - TissueSegmentationTool - INFO - Successfully loaded raw slice 15, size: (199, 247)
+2025-06-16 15:55:28,774 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,775 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=199.0, 99%=1656.0
+2025-06-16 15:55:28,775 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,775 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,775 - TissueSegmentationTool - INFO - Successfully loaded raw slice 16, size: (199, 247)
+2025-06-16 15:55:28,777 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,777 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=164.0, 99%=1288.0
+2025-06-16 15:55:28,777 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,778 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,778 - TissueSegmentationTool - INFO - Successfully loaded raw slice 17, size: (199, 247)
+2025-06-16 15:55:28,778 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,779 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=153.0, 99%=1123.0
+2025-06-16 15:55:28,779 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,779 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,779 - TissueSegmentationTool - INFO - Successfully loaded raw slice 18, size: (199, 247)
+2025-06-16 15:55:28,781 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,781 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=154.0, 99%=1070.0
+2025-06-16 15:55:28,781 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,782 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,782 - TissueSegmentationTool - INFO - Successfully loaded raw slice 19, size: (199, 247)
+2025-06-16 15:55:28,783 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,783 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=172.0, 99%=1181.479999999996
+2025-06-16 15:55:28,784 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,784 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,784 - TissueSegmentationTool - INFO - Successfully loaded raw slice 20, size: (199, 247)
+2025-06-16 15:55:28,785 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,786 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=155.0, 99%=1151.0
+2025-06-16 15:55:28,786 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,786 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,786 - TissueSegmentationTool - INFO - Successfully loaded raw slice 21, size: (199, 247)
+2025-06-16 15:55:28,788 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,789 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=255.51999999999998, 99%=1757.0
+2025-06-16 15:55:28,789 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,789 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,789 - TissueSegmentationTool - INFO - Successfully loaded raw slice 22, size: (199, 247)
+2025-06-16 15:55:28,792 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,793 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=582.0, 99%=1903.0
+2025-06-16 15:55:28,793 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,793 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,793 - TissueSegmentationTool - INFO - Successfully loaded raw slice 23, size: (199, 247)
+2025-06-16 15:55:28,793 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,793 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=322.0, 99%=1878.0
+2025-06-16 15:55:28,793 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,793 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,793 - TissueSegmentationTool - INFO - Successfully loaded raw slice 24, size: (199, 247)
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=262.0, 99%=1537.0
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Successfully loaded raw slice 25, size: (199, 247)
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=423.0, 99%=1267.0
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Successfully loaded raw slice 26, size: (199, 247)
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=283.0, 99%=1205.0
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Successfully loaded raw slice 27, size: (199, 247)
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=149.0, 99%=984.0
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Successfully loaded raw slice 28, size: (199, 247)
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=133.0, 99%=206.0
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Successfully loaded raw slice 29, size: (199, 247)
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=133.0, 99%=200.0
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Successfully loaded raw slice 30, size: (199, 247)
+2025-06-16 15:55:28,795 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,811 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=133.0, 99%=202.0
+2025-06-16 15:55:28,811 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,811 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,812 - TissueSegmentationTool - INFO - Successfully loaded raw slice 31, size: (199, 247)
+2025-06-16 15:55:28,815 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,815 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=133.0, 99%=207.0
+2025-06-16 15:55:28,816 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,816 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,816 - TissueSegmentationTool - INFO - Successfully loaded raw slice 32, size: (199, 247)
+2025-06-16 15:55:28,819 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,819 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=148.0, 99%=1189.0
+2025-06-16 15:55:28,820 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,820 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,820 - TissueSegmentationTool - INFO - Successfully loaded raw slice 33, size: (199, 247)
+2025-06-16 15:55:28,822 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,822 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=674.0, 99%=1389.0
+2025-06-16 15:55:28,823 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,823 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,823 - TissueSegmentationTool - INFO - Successfully loaded raw slice 34, size: (199, 247)
+2025-06-16 15:55:28,824 - TissueSegmentationTool - INFO - Processing array with shape (247, 199) and dtype uint16
+2025-06-16 15:55:28,824 - TissueSegmentationTool - INFO - Using percentile normalization: 1%=171.0, 99%=2098.479999999996
+2025-06-16 15:55:28,825 - TissueSegmentationTool - INFO - Converting 2D grayscale to RGB
+2025-06-16 15:55:28,825 - TissueSegmentationTool - INFO - Successfully created PIL image with size (199, 247)
+2025-06-16 15:55:28,825 - TissueSegmentationTool - INFO - Successfully loaded raw slice 35, size: (199, 247)
