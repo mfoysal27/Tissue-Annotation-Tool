@@ -2371,11 +2371,12 @@ class TissueSegmentationTool:
                         pixel_count = np.sum(mask_pixels)
                         if pixel_count > 0:
                             # Special handling for black segments - make them more visible
-                            if color[:3] == (0, 0, 0):  # If it's black
-                                visible_color = (64, 64, 64, 255)
-                                temp_mask[mask_pixels] = visible_color
-                            else:
-                                temp_mask[mask_pixels] = color
+                            # if color[:3] == (0, 0, 0):  # If it's black
+                            #     visible_color = (64, 64, 64, 255)
+                            #     temp_mask[mask_pixels] = visible_color
+                            # else:
+                            #     temp_mask[mask_pixels] = color
+                            temp_mask[mask_pixels] = color
                             pixels_filled += pixel_count
                     
                     print(f"Debug: Slice {next_idx} - filled {pixels_filled} pixels")
