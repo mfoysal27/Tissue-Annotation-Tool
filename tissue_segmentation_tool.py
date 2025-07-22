@@ -13,49 +13,17 @@ import time
 import torch
 import torch.nn as nn
 from torchvision import transforms
+from oiffile import OifFile
 
-# Initialize variables
-has_nd2reader = False
-has_nd2 = False
+import nd2
+from nd2reader import ND2Reader
 
-# Proper ND2 file handling with fallbacks
+# Import for 3D data saving
 try:
-    # First try nd2reader which is more stable
-    from nd2reader import ND2Reader
-    has_nd2reader = True
+    import tifffile
+    print('tifffile loaded for 3D export')
 except ImportError:
-    has_nd2reader = False    
-except Exception as e:
-    # Handle DLL loading errors
-    has_nd2reader = False
-
-try:
-    # Fall back to nd2 package
-    import nd2
-    has_nd2 = True
-except ImportError:
-    has_nd2 = False
-except Exception as e:
-    # Handle DLL loading errors
-    print(f"Warning: nd2 package failed to load due to DLL issue: {e}")
-    has_nd2 = False
-
-if not (has_nd2reader or has_nd2):
-    print("Warning: Neither nd2reader nor nd2 package found. ND2 file support will be disabled.")
-
-# OIB file support
-has_aicsimageio = False
-try:
-    from aicsimageio import AICSImage
-    has_aicsimageio = True
-    print("Successfully loaded aicsimageio for OIB file support")
-except ImportError:
-    has_aicsimageio = False
-    print("Warning: aicsimageio package not found. OIB file support will be disabled.")
-    print("To enable OIB support, install with: pip install aicsimageio")
-except Exception as e:
-    has_aicsimageio = False
-    print(f"Warning: aicsimageio package failed to load: {e}")
+    print('tifffile not available - 3D export will be limited')
 
 class DoubleConv(nn.Module):
     """Double Convolution and BN and ReLU"""
@@ -342,7 +310,7 @@ class TissueSegmentationTool:
         load_button = ttk.Button(frame, text="Load Image", command=self.load_image)
         load_button.pack(pady=20)
         
-        supported_formats = "Supported formats: ND2, JPG, PNG, TIF"
+        supported_formats = "Supported formats: ND2, OIB, JPG, PNG, TIF"
         format_label = ttk.Label(frame, text=supported_formats, font=("Arial", 12))
         format_label.pack(pady=10)
     
@@ -372,10 +340,6 @@ class TissueSegmentationTool:
         
         try:
             if file_ext == '.nd2':
-                if not (has_nd2reader or has_nd2):
-                    messagebox.showerror("Error", "ND2 file support is not available. Please install nd2reader or nd2 package using pip.")
-                    return  # Fixed: Should return, not process
-                
                 self.process_nd2_file(file_path)
                 loading_successful = len(self.original_images) > 0
                 
@@ -386,17 +350,17 @@ class TissueSegmentationTool:
                         self.show_nd2_troubleshooting()
                         return
             elif file_ext == '.oib':
-                if not has_aicsimageio:
-                    messagebox.showerror("Error", "OIB file support is not available. Please install aicsimageio package using pip.")
-                    return
-                
+                print('started loading oib')
                 self.process_oib_file(file_path)
                 loading_successful = len(self.original_images) > 0
                 
                 if not loading_successful:
                     messagebox.showerror("Error", "Failed to load OIB file")
                     return
-            elif file_ext in ['.jpg', '.jpeg', '.png', '.tif', '.tiff']:
+            elif file_ext in ['.tif', '.tiff']:
+                self.process_multipagetiff_image(file_path)
+                loading_successful = len(self.original_images) > 0
+            elif file_ext in ['.jpg', '.jpeg', '.png']:
                 self.process_regular_image(file_path)
                 loading_successful = len(self.original_images) > 0
             else:
@@ -424,7 +388,907 @@ class TissueSegmentationTool:
         # Sort files by name
         image_files.sort()
         return image_files
+    def process_multipagetiff_image(self, file_path):
+        """Process multipage TIFF file with multi-channel and multi-frame support"""
+        try:
+            self.original_images = []
+            error_details = []
+            
+            # Create a progress window for analysis
+            analysis_window = tk.Toplevel(self.root)
+            analysis_window.title("Analyzing Multipage TIFF File")
+            analysis_window.geometry("400x150")
+            analysis_window.transient(self.root)
+            analysis_window.grab_set()
+            
+            progress_label = ttk.Label(analysis_window, text="Analyzing TIFF file structure...")
+            progress_label.pack(pady=10)
+            
+            status_label = ttk.Label(analysis_window, text="", wraplength=380)
+            status_label.pack(pady=5)
+            
+            progress_bar = ttk.Progressbar(analysis_window, orient="horizontal", length=300, mode="indeterminate")
+            progress_bar.pack(pady=10)
+            progress_bar.start()
+            
+            # Update the progress window
+            analysis_window.update()
+            
+            # First analyze file to determine structure
+            total_frames = 0
+            total_channels = 1
+            frame_info = {}
+            image_shape = None
+            
+            try:
+                status_label.config(text="Reading TIFF file structure...")
+                analysis_window.update()
+                
+                import tifffile
+                
+                # Try to load the full image to get shape information
+                with tifffile.TiffFile(file_path) as tif:
+                    # Get number of pages
+                    # total_frames = len(tif.pages)
+                    total_frames= len(tif.pages)
+                    # print(f"TIFF File Pages: {total_frames}")
+                    
+
+                    
+                    # Get shape from first page
+                    first_page = tif.pages[0]
+                    page_shape = first_page.shape
+                    # print('page shapoe  infor ' , page_shape)
+                    
+                    # Try to read the whole data to get full shape
+                    try:
+                        image_data = tif.asarray()
+                        image_shape = image_data.shape
+                        # print(f"TIFF Image4 shape: {image_shape}")
+                        
+                        # Determine if this is a multi-channel image based on shape
+                        if len(image_shape) > 3:
+                            # Could be (T, C, Y, X) or similar
+                            total_channels = image_shape[0] if image_shape[0] <= 10 else 1  # Assume first dim is channels if reasonable
+                        
+                        frame_info['shape'] = image_shape
+                        frame_info['raw_data'] = image_data
+                    except Exception as e:
+                        print(f"Error reading full TIFF data: {str(e)}")
+                        # If reading full data fails, use page info
+                        image_shape = (total_frames,) + page_shape
+                        frame_info['shape'] = image_shape
+                        frame_info['pages_only'] = True
+                    
+            except Exception as e:
+                print(f"Error analyzing TIFF file: {str(e)}")
+                error_details.append(f"Analysis error: {str(e)}")
+            
+            # Close analysis window
+            try:
+                analysis_window.destroy()
+            except:
+                pass
+            
+            # If no frames found, show error
+            # print('total frame', total_frames)
+            # if total_frames == 0:
+            #     messagebox.showerror("Error", "Could not determine frame count in TIFF file")
+            #     return
+            
+            # Create selection dialog for frames and channels
+            selection_dialog = tk.Toplevel(self.root)
+            selection_dialog.title("Multipage TIFF Selection")
+            selection_dialog.geometry("450x500")
+            selection_dialog.transient(self.root)
+            selection_dialog.grab_set()
+            
+            frame = ttk.Frame(selection_dialog, padding="20")
+            frame.pack(fill=tk.BOTH, expand=True)
+            
+            # File info
+            info_text = f"TIFF file contains:\n• Shape: {image_shape}\n• Estimated frames: {total_frames}"
+            if total_channels > 1:
+                info_text += f"\n• Estimated channels: {total_channels}"
+            
+            info_label = ttk.Label(frame, text=info_text, font=("Arial", 10, "bold"))
+            info_label.pack(pady=10)
+            
+            # Frame range selection
+            if total_frames > 1:
+                frame_frame = ttk.LabelFrame(frame, text="Frame Range")
+                frame_frame.pack(pady=10, fill=tk.X)
+                
+                load_all_frames_var = tk.BooleanVar(value=True)
+                load_all_frames_cb = ttk.Checkbutton(
+                    frame_frame, 
+                    text="Load all frames",
+                    variable=load_all_frames_var
+                )
+                load_all_frames_cb.pack(pady=5, anchor=tk.W)
+                
+                range_grid = ttk.Frame(frame_frame)
+                range_grid.pack(pady=10, padx=10, fill=tk.X)
+                
+                ttk.Label(range_grid, text="Start Frame:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+                ttk.Label(range_grid, text="End Frame:").grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
+                
+                start_frame_var = tk.StringVar(value="0")
+                end_frame_var = tk.StringVar(value=str(total_frames - 1))
+                
+                start_frame_entry = ttk.Entry(range_grid, textvariable=start_frame_var, width=10)
+                start_frame_entry.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+                
+                end_frame_entry = ttk.Entry(range_grid, textvariable=end_frame_var, width=10)
+                end_frame_entry.grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
+                
+                def toggle_frame_inputs():
+                    state = "disabled" if load_all_frames_var.get() else "normal"
+                    start_frame_entry.config(state=state)
+                    end_frame_entry.config(state=state)
+                
+                load_all_frames_cb.config(command=toggle_frame_inputs)
+                toggle_frame_inputs()
+            else:
+                load_all_frames_var = tk.BooleanVar(value=True)
+                start_frame_var = tk.StringVar(value="0")
+                end_frame_var = tk.StringVar(value="0")
+            
+            # Channel selection
+            if total_channels > 1:
+                channel_frame = ttk.LabelFrame(frame, text="Channel Selection")
+                channel_frame.pack(pady=10, fill=tk.X)
+                
+                channel_var = tk.StringVar(value="all")
+                
+                ttk.Radiobutton(channel_frame, text="All channels (combined)", 
+                               variable=channel_var, value="all").pack(anchor=tk.W, pady=2)
+                
+                for i in range(total_channels):
+                    ttk.Radiobutton(channel_frame, text=f"Channel {i}", 
+                                   variable=channel_var, value=str(i)).pack(anchor=tk.W, pady=2)
+            else:
+                channel_var = tk.StringVar(value="all")
+            
+            # Buttons
+            button_frame = ttk.Frame(selection_dialog)
+            button_frame.pack(side=tk.BOTTOM, pady=15, fill=tk.X)
+            
+            load_button = tk.Button(
+                button_frame, 
+                text="LOAD TIFF", 
+                bg="#007bff",
+                fg="white",
+                font=("Arial", 11, "bold"),
+                relief=tk.RAISED,
+                borderwidth=2,
+                padx=15,
+                pady=8,
+                cursor="hand2"
+            )
+            load_button.pack(side=tk.LEFT, padx=10, expand=True, fill=tk.X)
+            
+            cancel_button = ttk.Button(
+                button_frame, 
+                text="Cancel", 
+                command=lambda: selection_dialog.destroy()
+            )
+            cancel_button.pack(side=tk.RIGHT, padx=10, pady=10)
+            
+            # Load button validation and execution
+            def validate_and_load():
+                try:
+
+                    start_frame = 0
+                    end_frame = total_frames-1
+                    
+                    # print('frames', start_frame, end_frame)
+
+                    
+                    selection_dialog.destroy()
+                    
+                    # Load the frames
+                    self.load_tiff_frames(file_path, frame_info, start_frame, end_frame)
+                    
+
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to load TIFF: {str(e)}")
+                    selection_dialog.destroy()
+            
+            load_button.config(command=validate_and_load)
+            
+            # Center dialog
+            selection_dialog.update_idletasks()
+            screen_width = selection_dialog.winfo_screenwidth()
+            screen_height = selection_dialog.winfo_screenheight()
+            width = selection_dialog.winfo_width()
+            height = selection_dialog.winfo_height()
+            x = (screen_width - width) // 2
+            y = (screen_height - height) // 2
+            selection_dialog.geometry(f"{width}x{height}+{x}+{y}")
+            
+            # Wait for user interaction
+            self.root.wait_window(selection_dialog)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to process multipage TIFF file: {str(e)}")
+            # Initialize empty
+            self.original_images = []
+            self.segmentation_masks = []
+            self.current_image_index = 0
     
+    # def load_tiff_frames(self, file_path, frame_info, start_frame, end_frame):
+        # """Load the selected frames and channels from the TIFF file"""
+        # try:
+        #     # Create progress window for loading
+        #     progress_window = tk.Toplevel(self.root)
+        #     progress_window.title("Loading TIFF Frames")
+        #     progress_window.geometry("400x150")
+        #     progress_window.transient(self.root)
+        #     progress_window.grab_set()
+            
+        #     progress_label = ttk.Label(progress_window, text="Loading frames, please wait...")
+        #     progress_label.pack(pady=10)
+            
+        #     status_label = ttk.Label(progress_window, text="", wraplength=380)
+        #     status_label.pack(pady=5)
+            
+        #     progress_bar = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="determinate")
+        #     progress_bar.pack(pady=10)
+            
+        #     # Update the progress window
+        #     progress_window.update()
+            
+        #     success = False
+            
+        #     try:
+        #         import tifffile
+                
+        #         raw_data = frame_info['raw_data']
+        #         image_shape = frame_info['shape']
+        #         # Extract frame based on shape
+        #         if len(image_shape) == 2:  # Single 2D image
+        #             frame_data = raw_data
+        #         elif len(image_shape) == 3:  # (X, Y, C)
+        #             frame_data = raw_data[:, :, :]
+        #             print('shape of frame1 data', frame_data.shape)
+
+        #         else:
+        #             # Fallback for unknown dimensions
+        #             frame_data = raw_data[1] if len(raw_data.shape) > 2 else raw_data
+        #             print('shape of frame3 data', frame_data.shape)
+
+                
+                
+        #                         # Process frame using existing method
+        #         img = self.process_multipagetiff_image(file_path)
+        #         if img:
+        #             self.original_images.append(img)
+        #             success = True
+                
+        #     except Exception as e:
+        #         print(f"Error loading TIFF frame {i}: {str(e)}")
+                # continue
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def load_tiff_frames(self, file_path, frame_info, start_frame, end_frame):
+        """Load the selected frames and channels from the TIFF file"""
+        try:
+            # Create progress window for loading
+            progress_window = tk.Toplevel(self.root)
+            progress_window.title("Loading TIFF Frames")
+            progress_window.geometry("400x150")
+            progress_window.transient(self.root)
+            progress_window.grab_set()
+            
+            progress_label = ttk.Label(progress_window, text="Loading frames, please wait...")
+            progress_label.pack(pady=10)
+            
+            status_label = ttk.Label(progress_window, text="", wraplength=380)
+            status_label.pack(pady=5)
+            
+            progress_bar = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="determinate")
+            progress_bar.pack(pady=10)
+            
+            # Update the progress window
+            progress_window.update()
+            
+            success = False
+            
+            try:
+                import tifffile
+                
+                raw_data = frame_info['raw_data']
+                image_shape = frame_info['shape']
+
+    # Store raw data for crop functionality
+                self.raw_image_data = raw_data
+                self.original_shape = image_shape
+                self.original_raw_data = raw_data.copy()
+                
+                # Extract frame based on shape
+                if len(image_shape) == 2:  # Single 2D image
+                    # Process as a single 2D image
+                    img = self.process_nd2_array(raw_data)
+                    if img:
+                        self.original_images.append(img)
+                        success = True
+                elif len(image_shape) == 3:  # (Z, Y, X) or (Y, X, C)
+                    if image_shape[2] in [3, 4]:  # Likely (Y, X, C) - RGB or RGBA image
+                        img = self.process_nd2_array(raw_data)
+                        if img:
+                            self.original_images.append(img)
+                            success = True
+                    else:  # Likely (Z, Y, X) - multiple grayscale frames
+                        for i in range(image_shape[0]):
+                            img = self.process_nd2_array(raw_data[i])
+                            if img:
+                                self.original_images.append(img)
+                                success = True
+                elif len(image_shape) == 4:  # (Z, C, Y, X) or similar
+                    for i in range(image_shape[0]):
+                        img = self.process_nd2_array(raw_data[i])
+                        if img:
+                            self.original_images.append(img)
+                            success = True
+                else:
+                    # Fallback for unknown dimensions
+                    img = self.process_nd2_array(raw_data[0] if len(raw_data.shape) > 2 else raw_data)
+                    if img:
+                        self.original_images.append(img)
+                        success = True
+                    
+            except Exception as e:
+                print(f"Error loading TIFF data: {str(e)}")
+            
+            # Close progress window
+            progress_window.destroy()
+            
+            # Check if we got any images
+            if not self.original_images:
+                messagebox.showerror("Error", "Failed to load any frames from the TIFF file")
+                return
+            
+            # Initialize segmentation masks for successful images
+            self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0)) for img in self.original_images]
+            self.current_image_index = 0
+
+
+        
+            # Show success message
+            messagebox.showinfo("Success", f"Successfully loaded {len(self.original_images)} frames from TIFF file")
+            
+        except Exception as e:
+            # Show error message
+            messagebox.showerror("Error", f"Failed to load TIFF frames: {str(e)}")
+            
+            # Initialize empty
+            self.original_images = []
+            self.segmentation_masks = []
+            self.current_image_index = 0
+
+
+
+
+
+
+
+
+            #     # Setup progress tracking
+            #     num_frames_to_load = end_frame - start_frame + 1
+            #     print('number of frames', num_frames_to_load)
+            #     progress_bar['maximum'] = num_frames_to_load
+            #     progress_bar['value'] = 0
+            #     progress_window.update()
+                
+            #     # Check if we have raw data or need to read pages
+            #     if 'raw_data' in frame_info and not frame_info.get('pages_only', False):
+            #         # Get the raw data from frame_info
+            #         raw_data = frame_info['raw_data']
+            #         image_shape = frame_info['shape']
+                    
+            #         # Store raw data for crop functionality
+            #         self.raw_image_data = raw_data
+            #         self.original_shape = image_shape
+            #         self.original_raw_data = raw_data.copy()
+                    
+            #         status_label.config(text=f"Processing frames {start_frame} to {end_frame}...")
+            #         progress_window.update()
+                    
+            #         # Process frames based on dimension structure
+            #         for i in range(start_frame, end_frame + 1):
+            #             try:
+            #                 # Update progress
+            #                 frame_index = i - start_frame
+            #                 progress_label.config(text=f"Loading frame {frame_index+1}/{num_frames_to_load}...")
+            #                 progress_bar['value'] = frame_index + 1
+            #                 progress_window.update()
+                            
+            #                 # Extract frame based on shape
+            #                 if len(image_shape) == 2:  # Single 2D image
+            #                     frame_data = raw_data
+            #                 elif len(image_shape) == 3:  # (X, Y, C)
+            #                     frame_data = raw_data[:, :, :]
+            #                     print('shape of frame1 data', frame_data.shape)
+
+            #                 else:
+            #                     # Fallback for unknown dimensions
+            #                     frame_data = raw_data[1] if len(raw_data.shape) > 2 else raw_data
+            #                     print('shape of frame3 data', frame_data.shape)
+                                
+            #                 # Process frame using existing method
+            #                 img = self.process_multipagetiff_image(file_path)
+            #                 if img:
+            #                     self.original_images.append(img)
+            #                     success = True
+                            
+            #             except Exception as e:
+            #                 print(f"Error loading TIFF frame {i}: {str(e)}")
+            #                 continue
+            #     else:
+            #         # Read pages directly from file
+            #         with tifffile.TiffFile(file_path) as tif:
+            #             for i in range(start_frame, min(end_frame + 1, len(tif.pages))):
+            #                 try:
+            #                     # Update progress
+            #                     frame_index = i - start_frame
+            #                     progress_label.config(text=f"Loading frame {frame_index+1}/{num_frames_to_load}...")
+            #                     progress_bar['value'] = frame_index + 1
+            #                     progress_window.update()
+                                
+            #                     # Read the page
+            #                     page = tif.pages[i]
+            #                     frame_data = page.asarray()
+                                
+            #                     # Handle channel selection if it's an ImageJ hyperstack
+            #                     if tif.is_imagej and selected_channel != "all":
+            #                         try:
+            #                             metadata = tif.imagej_metadata
+            #                             if 'channels' in metadata and metadata['channels'] > 1:
+            #                                 c_idx = int(selected_channel)
+            #                                 # Need to calculate the right page based on channel
+            #                                 # This is complex and depends on ImageJ hyperstack organization
+            #                                 # Simplified approach for now
+            #                                 pass
+            #                         except (ValueError, IndexError):
+            #                             pass
+                                
+            #                     # Process frame
+            #                     img = self.process_multipagetiff_image(frame_data)
+            #                     # img = frame_data
+
+            #                     print('shape of multipage tiff', img.shape)
+            #                     if img:
+            #                         self.original_images.append(img)
+            #                         success = True
+            #                 except Exception as e:
+            #                     print(f"Error loading TIFF page {i}: {str(e)}")
+            #                     continue
+                
+            # except Exception as e:
+            #     print(f"Error processing TIFF data: {str(e)}")
+            
+            # # Close progress window
+            # try:
+            progress_window.destroy()
+            # except:
+            #     pass
+            
+            # Check if we got any images
+            if not self.original_images:
+                messagebox.showerror("Error", "Failed to load any frames from the TIFF file")
+                return
+            
+            # Initialize segmentation masks for successful images
+            self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0)) for img in self.original_images]
+            self.current_image_index = 0
+            
+            # Show success message
+            messagebox.showinfo("Success", f"Successfully loaded {len(self.original_images)} frames from TIFF file")
+            
+        except Exception as e:
+            # Show error message
+            messagebox.showerror("Error", f"Failed to load TIFF frames: {str(e)}")
+            
+            # Initialize empty
+            self.original_images = []
+            self.segmentation_masks = []
+            self.current_image_index = 0
+    
+    def process_oib_file(self, file_path):
+        """Process OIB file with enhanced multi-channel and multi-frame support"""
+        try:
+            self.original_images = []
+            error_details = []
+            
+            # Create a progress window for analysis
+            analysis_window = tk.Toplevel(self.root)
+            analysis_window.title("Analyzing OIB File")
+            analysis_window.geometry("400x150")
+            analysis_window.transient(self.root)
+            analysis_window.grab_set()
+            
+            progress_label = ttk.Label(analysis_window, text="Analyzing OIB file structure...")
+            progress_label.pack(pady=10)
+            
+            status_label = ttk.Label(analysis_window, text="", wraplength=380)
+            status_label.pack(pady=5)
+            
+            progress_bar = ttk.Progressbar(analysis_window, orient="horizontal", length=300, mode="indeterminate")
+            progress_bar.pack(pady=10)
+            progress_bar.start()
+            
+            # Update the progress window
+            analysis_window.update()
+            
+            # First analyze file to determine structure
+            total_frames = 0
+            total_channels = 1
+            frame_info = {}
+            image_shape = None
+            
+            try:
+                status_label.config(text="Reading OIB file structure...")
+                analysis_window.update()
+                
+                from oiffile import imread
+                
+                # Try to load the full image to get shape information
+                with OifFile(file_path) as oib:
+                    # Get file info
+                    file_info = oib.mainfile.get('File Info', {})
+                    print(f"OIB File Info: {file_info}")
+                    
+                    # Try to read the image to get dimensions
+                    image_data = imread(file_path)
+                    image_shape = image_data.shape
+                    print(f"OIB Image shape: {image_shape}")
+                    
+                    # Determine frame and channel count based on shape
+                    if len(image_shape) >= 3:
+                        # Multi-dimensional data
+                        if len(image_shape) == 3:
+                            # Could be (Z, Y, X) or (C, Y, X) or (T, Y, X)
+                            total_frames = image_shape[0]
+                            frame_info['dimension'] = 'z'  # Assume Z-stack
+                        elif len(image_shape) == 4:
+                            # Could be (T, C, Y, X) or (C, Z, Y, X) or (T, Z, Y, X)
+                            total_frames = image_shape[1]
+                            total_channels = image_shape[0]
+                            frame_info['dimension'] = 'tz'  # Time and Z or Time and Channel
+                        elif len(image_shape) == 5:
+                            # Likely (T, C, Z, Y, X)
+                            total_frames = image_shape[0] * image_shape[2]  # T * Z
+                            total_channels = image_shape[1]
+                            frame_info['dimension'] = 'tczyx'
+                    else:
+                        # 2D image
+                        total_frames = 1
+                        total_channels = 1
+                    
+                    frame_info['shape'] = image_shape
+                    frame_info['raw_data'] = image_data
+                    
+            except Exception as e:
+                print(f"Error analyzing OIB file: {str(e)}")
+                error_details.append(f"Analysis error: {str(e)}")
+            
+            # Close analysis window
+            try:
+                analysis_window.destroy()
+            except:
+                pass
+            
+            # If no frames found, show error
+            if total_frames == 0:
+                messagebox.showerror("Error", "Could not determine frame count in OIB file")
+                return
+            
+            # Create selection dialog for frames and channels
+            selection_dialog = tk.Toplevel(self.root)
+            selection_dialog.title("OIB File Selection")
+            selection_dialog.geometry("450x500")
+            selection_dialog.transient(self.root)
+            selection_dialog.grab_set()
+            
+            frame = ttk.Frame(selection_dialog, padding="20")
+            frame.pack(fill=tk.BOTH, expand=True)
+            
+            # File info
+            info_text = f"OIB file contains:\n• Shape: {image_shape}\n• Estimated frames: {total_frames}"
+            if total_channels > 1:
+                info_text += f"\n• Estimated channels: {total_channels}"
+            
+            info_label = ttk.Label(frame, text=info_text, font=("Arial", 10, "bold"))
+            info_label.pack(pady=10)
+            
+            # Frame range selection
+            if total_frames > 1:
+                frame_frame = ttk.LabelFrame(frame, text="Frame Range")
+                frame_frame.pack(pady=10, fill=tk.X)
+                
+                load_all_frames_var = tk.BooleanVar(value=True)
+                load_all_frames_cb = ttk.Checkbutton(
+                    frame_frame, 
+                    text="Load all frames",
+                    variable=load_all_frames_var
+                )
+                load_all_frames_cb.pack(pady=5, anchor=tk.W)
+                
+                range_grid = ttk.Frame(frame_frame)
+                range_grid.pack(pady=10, padx=10, fill=tk.X)
+                
+                ttk.Label(range_grid, text="Start Frame:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+                ttk.Label(range_grid, text="End Frame:").grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
+                
+                start_frame_var = tk.StringVar(value="0")
+                end_frame_var = tk.StringVar(value=str(total_frames - 1))
+                
+                start_frame_entry = ttk.Entry(range_grid, textvariable=start_frame_var, width=10)
+                start_frame_entry.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+                
+                end_frame_entry = ttk.Entry(range_grid, textvariable=end_frame_var, width=10)
+                end_frame_entry.grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
+                
+                def toggle_frame_inputs():
+                    state = "disabled" if load_all_frames_var.get() else "normal"
+                    start_frame_entry.config(state=state)
+                    end_frame_entry.config(state=state)
+                
+                load_all_frames_cb.config(command=toggle_frame_inputs)
+                toggle_frame_inputs()
+            else:
+                load_all_frames_var = tk.BooleanVar(value=True)
+                start_frame_var = tk.StringVar(value="0")
+                end_frame_var = tk.StringVar(value="0")
+            
+            # Channel selection
+            if total_channels > 1:
+                channel_frame = ttk.LabelFrame(frame, text="Channel Selection")
+                channel_frame.pack(pady=10, fill=tk.X)
+                
+                channel_var = tk.StringVar(value="all")
+                
+                ttk.Radiobutton(channel_frame, text="All channels (combined)", 
+                               variable=channel_var, value="all").pack(anchor=tk.W, pady=2)
+                
+                for i in range(total_channels):
+                    ttk.Radiobutton(channel_frame, text=f"Channel {i}", 
+                                   variable=channel_var, value=str(i)).pack(anchor=tk.W, pady=2)
+            else:
+                channel_var = tk.StringVar(value="all")
+            
+            # Buttons
+            button_frame = ttk.Frame(selection_dialog)
+            button_frame.pack(side=tk.BOTTOM, pady=15, fill=tk.X)
+            
+            load_button = tk.Button(
+                button_frame, 
+                text="LOAD OIB", 
+                bg="#007bff",
+                fg="white",
+                font=("Arial", 11, "bold"),
+                relief=tk.RAISED,
+                borderwidth=2,
+                padx=15,
+                pady=8,
+                cursor="hand2"
+            )
+            load_button.pack(side=tk.LEFT, padx=10, expand=True, fill=tk.X)
+            
+            cancel_button = ttk.Button(
+                button_frame, 
+                text="Cancel", 
+                command=lambda: selection_dialog.destroy()
+            )
+            cancel_button.pack(side=tk.RIGHT, padx=10, pady=10)
+            
+            # Load button validation and execution
+            def validate_and_load():
+                try:
+                    # Get frame range
+                    if total_frames > 1 and not load_all_frames_var.get():
+                        start_frame = int(start_frame_var.get())
+                        end_frame = int(end_frame_var.get())
+                        
+                        if start_frame < 0 or start_frame >= total_frames:
+                            messagebox.showerror("Error", f"Start frame must be between 0 and {total_frames-1}")
+                            return
+                        if end_frame < 0 or end_frame >= total_frames:
+                            messagebox.showerror("Error", f"End frame must be between 0 and {total_frames-1}")
+                            return
+                        if start_frame > end_frame:
+                            messagebox.showerror("Error", "Start frame must be less than or equal to end frame")
+                            return
+                    else:
+                        start_frame = 0
+                        end_frame = total_frames - 1
+                    
+                    # Get channel selection
+                    selected_channel = channel_var.get()
+                    
+                    selection_dialog.destroy()
+                    
+                    # Load the frames
+                    self.load_oib_frames(file_path, frame_info, start_frame, end_frame, selected_channel)
+                    
+                except ValueError:
+                    messagebox.showerror("Error", "Please enter valid frame numbers")
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to load OIB: {str(e)}")
+            
+            load_button.config(command=validate_and_load)
+            
+            # Center dialog
+            selection_dialog.update_idletasks()
+            screen_width = selection_dialog.winfo_screenwidth()
+            screen_height = selection_dialog.winfo_screenheight()
+            width = selection_dialog.winfo_width()
+            height = selection_dialog.winfo_height()
+            x = (screen_width - width) // 2
+            y = (screen_height - height) // 2
+            selection_dialog.geometry(f"{width}x{height}+{x}+{y}")
+            
+            # Wait for user interaction
+            self.root.wait_window(selection_dialog)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to process OIB file: {str(e)}")
+                         # Initialize empty
+            self.original_images = []
+            self.segmentation_masks = []
+            self.current_image_index = 0
+    
+    def load_oib_frames(self, file_path, frame_info, start_frame, end_frame, selected_channel):
+        """Load the selected frames and channels from the OIB file"""
+        try:
+            # Create progress window for loading
+            progress_window = tk.Toplevel(self.root)
+            progress_window.title("Loading OIB Frames")
+            progress_window.geometry("400x150")
+            progress_window.transient(self.root)
+            progress_window.grab_set()
+            
+            progress_label = ttk.Label(progress_window, text="Loading frames, please wait...")
+            progress_label.pack(pady=10)
+            
+            status_label = ttk.Label(progress_window, text="", wraplength=380)
+            status_label.pack(pady=5)
+            
+            progress_bar = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="determinate")
+            progress_bar.pack(pady=10)
+            
+            # Update the progress window
+            progress_window.update()
+            
+            success = False
+            
+            try:
+                # Get the raw data from frame_info
+                raw_data = frame_info['raw_data']
+                image_shape = frame_info['shape']
+                dimension = frame_info['dimension']
+                
+                # Store raw data for crop functionality
+                self.raw_image_data = raw_data
+                self.original_shape = image_shape
+                self.original_raw_data = raw_data.copy()
+                
+                status_label.config(text=f"Processing frames {start_frame} to {end_frame}...")
+                progress_window.update()
+                
+                # Setup progress tracking
+                num_frames_to_load = end_frame - start_frame + 1
+                progress_bar['maximum'] = num_frames_to_load
+                progress_bar['value'] = 0
+                progress_window.update()
+                
+                # Process frames based on dimension structure
+                for i in range(start_frame, end_frame + 1):
+                    try:
+                        # Update progress
+                        frame_index = i - start_frame
+                        progress_label.config(text=f"Loading frame {frame_index+1}/{num_frames_to_load}...")
+                        progress_bar['value'] = frame_index + 1
+                        progress_window.update()
+                        
+                        # Extract frame based on shape
+                        if len(image_shape) == 2:
+                            # 2D image
+                            frame_data = raw_data
+                        elif len(image_shape) == 3:
+                            # 3D: (Z, Y, X) or (C, Y, X) or (T, Y, X)
+                            if i < image_shape[0]:
+                                frame_data = raw_data[i]
+                            else:
+                                continue
+                        elif len(image_shape) == 4:
+                            # 4D: (T, C, Y, X) or (C, Z, Y, X) or (T, Z, Y, X)
+                            t_idx = i // image_shape[1] if i < image_shape[0] * image_shape[1] else 0
+                            c_idx = i % image_shape[1]
+                            
+                            if t_idx < image_shape[0] and c_idx < image_shape[1]:
+                                frame_data = raw_data[t_idx, c_idx]
+                            else:
+                                continue
+                        elif len(image_shape) == 5:
+                            # 5D: (T, C, Z, Y, X)
+                            t_idx = i // (image_shape[1] * image_shape[2])
+                            remaining = i % (image_shape[1] * image_shape[2])
+                            c_idx = remaining // image_shape[2]
+                            z_idx = remaining % image_shape[2]
+                            
+                            if (t_idx < image_shape[0] and c_idx < image_shape[1] and z_idx < image_shape[2]):
+                                frame_data = raw_data[t_idx, c_idx, z_idx]
+                            else:
+                                continue
+                        else:
+                            # Fallback: take first slice
+                            frame_data = raw_data[0] if len(raw_data.shape) > 2 else raw_data
+                        
+                        # Handle channel selection
+                        if selected_channel != "all" and len(frame_data.shape) >= 3:
+                            try:
+                                channel_idx = int(selected_channel)
+                                if channel_idx < frame_data.shape[-1]:  # Channels usually last dimension
+                                    frame_data = frame_data[:, :, channel_idx]
+                                elif channel_idx < frame_data.shape[0]:  # Or first dimension
+                                    frame_data = frame_data[channel_idx]
+                            except (ValueError, IndexError):
+                                pass  # Keep all channels if selection fails
+                        
+                        # Process frame using existing method
+                        img = self.process_nd2_array(frame_data)
+                        if img:
+                            self.original_images.append(img)
+                            success = True
+                        
+                    except Exception as e:
+                        print(f"Error loading OIB frame {i}: {str(e)}")
+                        continue
+                
+            except Exception as e:
+                print(f"Error processing OIB data: {str(e)}")
+            
+            # Close progress window
+            try:
+                progress_window.destroy()
+            except:
+                pass
+            
+            # Check if we got any images
+            if not self.original_images:
+                messagebox.showerror("Error", "Failed to load any frames from the OIB file")
+                return
+            
+            # Initialize segmentation masks for successful images
+            self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0)) for img in self.original_images]
+            self.current_image_index = 0
+            
+            # Show success message
+            messagebox.showinfo("Success", f"Successfully loaded {len(self.original_images)} frames from OIB file")
+            
+        except Exception as e:
+            # Show error message
+            messagebox.showerror("Error", f"Failed to load OIB frames: {str(e)}")
+            
+            # Initialize empty
+            self.original_images = []
+            self.segmentation_masks = []
+            self.current_image_index = 0
+
     def process_nd2_file(self, file_path):
         try:
             self.original_images = []
@@ -458,36 +1322,36 @@ class TissueSegmentationTool:
             frame_dimension = None
             
             # Try to get frame count with nd2 package
-            if has_nd2:
-                try:
-                    status_label.config(text="Analyzing ND2 file dimensions...")
-                    analysis_window.update()
+
+            try:
+                status_label.config(text="Analyzing ND2 file dimensions...")
+                analysis_window.update()
+                
+                with nd2.ND2File(file_path) as f:                        
+                    # Find likely Z-stack or other dimension for frames
+                    z_dimensions = []
+                    for dim in ['z', 'v', 'Z', 'V', 't', 'T']:
+                        if dim in f.sizes and f.sizes[dim] > 1:
+                            z_dimensions.append((dim, f.sizes[dim]))
                     
-                    with nd2.ND2File(file_path) as f:                        
-                        # Find likely Z-stack or other dimension for frames
-                        z_dimensions = []
-                        for dim in ['z', 'v', 'Z', 'V', 't', 'T']:
-                            if dim in f.sizes and f.sizes[dim] > 1:
-                                z_dimensions.append((dim, f.sizes[dim]))
-                        
-                        # If no Z dimensions found, check other dimensions
-                        if not z_dimensions:
-                            for dim, size in f.sizes.items():
-                                if size > 1 and dim.lower() not in ['x', 'y', 'c']:
-                                    z_dimensions.append((dim, size))
-                        
-                        # If still no dimensions, try using channels
-                        if not z_dimensions and 'c' in f.sizes and f.sizes['c'] > 1:
-                            z_dimensions.append(('c', f.sizes['c']))
-                        
-                        if z_dimensions:
-                            # Pick the dimension with the most slices
-                            frame_dimension, total_frames = max(z_dimensions, key=lambda x: x[1])
-                except Exception as e:
-                    pass
+                    # If no Z dimensions found, check other dimensions
+                    if not z_dimensions:
+                        for dim, size in f.sizes.items():
+                            if size > 1 and dim.lower() not in ['x', 'y', 'c']:
+                                z_dimensions.append((dim, size))
+                    
+                    # If still no dimensions, try using channels
+                    if not z_dimensions and 'c' in f.sizes and f.sizes['c'] > 1:
+                        z_dimensions.append(('c', f.sizes['c']))
+                    
+                    if z_dimensions:
+                        # Pick the dimension with the most slices
+                        frame_dimension, total_frames = max(z_dimensions, key=lambda x: x[1])
+            except Exception as e:
+                pass
             
             # If nd2 package failed, try nd2reader
-            if total_frames == 0 and has_nd2reader:
+            if total_frames == 0:
                 try:
                     status_label.config(text="Analyzing with nd2reader...")
                     analysis_window.update()
@@ -785,7 +1649,7 @@ class TissueSegmentationTool:
                     error_details.append(error_msg)
             
             # Try using a different approach if both methods failed
-            if not success and has_nd2:
+            if not success:
                 try:
                     status_label.config(text="Trying alternative loading approach...")
                     progress_window.update()
@@ -1099,21 +1963,21 @@ class TissueSegmentationTool:
         folder_frame = ttk.Frame(nav_frame)
         folder_frame.pack(side=tk.TOP, fill=tk.X, pady=5)
         
-        load_folder_button = ttk.Button(
+        load_image_button = ttk.Button(
             folder_frame, 
             text="Load New Image", 
             command=self.load_new_image,
             style="Action.TButton"
         )
-        load_folder_button.pack(side=tk.LEFT, padx=5)
+        load_image_button.pack(side=tk.LEFT, padx=5)
         
-        load_folder_button2 = ttk.Button(
+        load_annotation_button = ttk.Button(
             folder_frame, 
             text="Load Annotation", 
             command=self.load_annotation,
             style="Action.TButton"
         )
-        load_folder_button2.pack(side=tk.LEFT, padx=5)
+        load_annotation_button.pack(side=tk.LEFT, padx=5)
         
         current_dir_label = ttk.Label(
             folder_frame, 
@@ -1304,6 +2168,30 @@ class TissueSegmentationTool:
         segment_frame = ttk.LabelFrame(right_frame, text="Segments")
         segment_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         
+        # Add a slider to control visible segments
+        slider_frame = ttk.Frame(segment_frame)
+        slider_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(slider_frame, text="Segment Page:").pack(side=tk.LEFT, padx=5)
+        
+        # Calculate how many segments to show per page
+        segments_per_page = 8  # Adjust this value based on UI space
+        total_pages = max(1, (len(self.segments) + segments_per_page - 1) // segments_per_page)
+        
+        self.segment_page_var = tk.IntVar(value=1)
+        segment_slider = ttk.Scale(
+            slider_frame,
+            from_=1,
+            to=total_pages,
+            orient=tk.HORIZONTAL,
+            variable=self.segment_page_var
+        )
+        segment_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        
+        # Add a label showing the current page
+        self.segment_page_label = ttk.Label(slider_frame, text=f"Page 1/{total_pages}")
+        self.segment_page_label.pack(side=tk.LEFT, padx=5)
+        
         # Create scroll frame for segments
         canvas = tk.Canvas(segment_frame)
         scrollbar = ttk.Scrollbar(segment_frame, orient="vertical", command=canvas.yview)
@@ -1317,6 +2205,67 @@ class TissueSegmentationTool:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         
+        # Function to update visible segments based on slider
+        def update_visible_segments(event=None):
+            # Clear current segment buttons
+            for widget in scrollable_frame.winfo_children():
+                widget.destroy()
+                
+            # Calculate range of segments to show
+            current_page = self.segment_page_var.get()
+            start_idx = (current_page - 1) * segments_per_page
+            end_idx = min(start_idx + segments_per_page, len(self.segments))
+            
+            # Update page label
+            self.segment_page_label.config(text=f"Page {current_page}/{total_pages}")
+            
+            # Get segments for current page
+            visible_segments = self.segments[start_idx:end_idx]
+            
+            # Create buttons for visible segments
+            for i, segment in enumerate(visible_segments):
+                segment_idx = self.segments.index(segment)
+                
+                # Create frame for segment button
+                segment_frame = ttk.Frame(scrollable_frame)
+                segment_frame.pack(fill=tk.X, pady=2, padx=3)
+                
+                # Get color for segment
+                color = self.segment_colors[segment]
+                color_hex = f'#{color[0]:02x}{color[1]:02x}{color[2]:02x}'
+            
+                # Add index prefix
+                prefix = f"{start_idx + i + 1}."
+                prefix_label = ttk.Label(segment_frame, text=prefix, width=3)
+                prefix_label.pack(side=tk.LEFT)
+            
+                # Add color button
+                color_button = tk.Button(
+                    segment_frame,
+                    bg=color_hex, 
+                    width=2, 
+                    height=1,
+                    command=lambda idx=segment_idx: self.select_segment(idx)
+                )
+                color_button.pack(side=tk.LEFT, padx=5)
+            
+                # Add segment name (handle hierarchical segments)
+                if " - " in segment:
+                    # For subfeatures, show only the part after the dash
+                    segment_name = segment.split(" - ")[1]
+                    segment_label = ttk.Label(segment_frame, text=segment_name)
+                else:
+                    # For main features, show full name with bold
+                    segment_label = ttk.Label(segment_frame, text=segment, font=("Arial", 9, "bold"))
+                
+                segment_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+                
+                # Store button reference
+                self.segment_buttons[segment_idx] = color_button
+        
+        # Bind slider to update function
+        segment_slider.config(command=update_visible_segments)
+        
         # Enable mouse wheel scrolling on the segment canvas
         def on_mousewheel_segments(event):
             # Windows uses delta, Unix systems use num
@@ -1325,10 +2274,9 @@ class TissueSegmentationTool:
             elif hasattr(event, 'num') and event.num:
                 delta = -120 if event.num == 5 else 120
             else:
-
                 return
-
-                canvas.yview_scroll(int(-1 * (delta / 120)), "units")
+                
+            canvas.yview_scroll(int(-1 * (delta / 120)), "units")
         
         # Bind mouse wheel to canvas and scrollable frame
         canvas.bind("<MouseWheel>", on_mousewheel_segments)
@@ -1343,121 +2291,11 @@ class TissueSegmentationTool:
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
-        # Organized segment buttons
+        # Initialize segment buttons array
         self.segment_buttons = [None] * len(self.segments)
         
-        # Separate hierarchical features (Villi and Gland) from individual features
-        hierarchical_features = [segment for segment in self.segments if " - " not in segment and segment in self.segment_hierarchy and self.segment_hierarchy[segment]]
-        individual_features = [segment for segment in self.segments if " - " not in segment and (segment not in self.segment_hierarchy or not self.segment_hierarchy[segment])]
-        
-        feature_counter = 0
-        
-        # First, add hierarchical features (Villi and Gland) with their subfeatures
-        for main_feature in hierarchical_features:
-            main_idx = self.segments.index(main_feature)
-            
-            # Create a frame for the entire group
-            feature_frame = ttk.LabelFrame(scrollable_frame, text="")
-            feature_frame.pack(fill=tk.X, pady=2, padx=3)
-            
-            # Add the main feature button
-            color = self.segment_colors[main_feature]
-            color_hex = f'#{color[0]:02x}{color[1]:02x}{color[2]:02x}'
-            
-            main_feature_frame = ttk.Frame(feature_frame)
-            main_feature_frame.pack(fill=tk.X, pady=2)
-            
-            # Prefix with "a.", "b.", etc. based on position
-            prefix = chr(97 + feature_counter) + "."
-            prefix_label = ttk.Label(main_feature_frame, text=prefix, width=3)
-            prefix_label.pack(side=tk.LEFT)
-            
-            color_button = tk.Button(
-                main_feature_frame, 
-                bg=color_hex, 
-                width=2, 
-                height=1,
-                command=lambda idx=main_idx: self.select_segment(idx)
-            )
-            color_button.pack(side=tk.LEFT, padx=5)
-            
-            segment_label = ttk.Label(main_feature_frame, text=main_feature, font=("Arial", 9, "bold"))
-            segment_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
-            
-            self.segment_buttons[main_idx] = color_button
-            
-            # Add all subfeatures for this main feature
-            if main_feature in self.segment_hierarchy:
-                for i, subfeature in enumerate(self.segment_hierarchy[main_feature]):
-                    sub_idx = self.segments.index(subfeature)
-                    
-                    # Get just the subfeature name without the parent prefix
-                    subfeature_name = subfeature.split(" - ")[1]
-                    
-                    color = self.segment_colors[subfeature]
-                    color_hex = f'#{color[0]:02x}{color[1]:02x}{color[2]:02x}'
-                    
-                    sub_frame = ttk.Frame(feature_frame)
-                    sub_frame.pack(fill=tk.X, pady=1)
-                    
-                    # Add roman numeral prefix based on position
-                    roman_numerals = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"]
-                    prefix = roman_numerals[i] + "." if i < len(roman_numerals) else f"{i+1}."
-                    
-                    # Add indent and prefix for subfeature
-                    indent_frame = ttk.Frame(sub_frame, width=10)
-                    indent_frame.pack(side=tk.LEFT)
-                    
-                    prefix_label = ttk.Label(sub_frame, text=prefix, width=3)
-                    prefix_label.pack(side=tk.LEFT)
-                    
-                    color_button = tk.Button(
-                        sub_frame, 
-                        bg=color_hex, 
-                        width=2, 
-                        height=1,
-                        command=lambda idx=sub_idx: self.select_segment(idx)
-                    )
-                    color_button.pack(side=tk.LEFT, padx=5)
-                    
-                    segment_label = ttk.Label(sub_frame, text=subfeature_name)
-                    segment_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
-                    
-                    self.segment_buttons[sub_idx] = color_button
-            
-            feature_counter += 1
-        
-        # Then, add all individual features
-        for feature in individual_features:
-            feature_idx = self.segments.index(feature)
-            
-            # Create frame for individual feature
-            individual_frame = ttk.Frame(scrollable_frame)
-            individual_frame.pack(fill=tk.X, pady=2, padx=3)
-            
-            # Add the feature button
-            color = self.segment_colors[feature]
-            color_hex = f'#{color[0]:02x}{color[1]:02x}{color[2]:02x}'
-            
-            # Prefix with "c.", "d.", etc. continuing from hierarchical features
-            prefix = chr(97 + feature_counter) + "."
-            prefix_label = ttk.Label(individual_frame, text=prefix, width=3)
-            prefix_label.pack(side=tk.LEFT)
-            
-            color_button = tk.Button(
-                individual_frame, 
-                bg=color_hex, 
-                width=2, 
-                height=1,
-                command=lambda idx=feature_idx: self.select_segment(idx)
-            )
-            color_button.pack(side=tk.LEFT, padx=5)
-            
-            segment_label = ttk.Label(individual_frame, text=feature, font=("Arial", 9))
-            segment_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
-            
-            self.segment_buttons[feature_idx] = color_button
-            feature_counter += 1
+        # Initialize the first page of segments
+        update_visible_segments()
         
         # Save button
         save_frame = ttk.Frame(right_frame)
@@ -1659,17 +2497,18 @@ class TissueSegmentationTool:
         
         # Highlight selected segment button
         for i, button in enumerate(self.segment_buttons):
-            if i == index:
-                button.config(relief=tk.SUNKEN, borderwidth=3)
-            else:
-
-                button.config(relief=tk.RAISED, borderwidth=1)
+            if button is not None:  # Check if button exists
+                if i == index:
+                    button.config(relief=tk.SUNKEN, borderwidth=3)
+                else:
+                    button.config(relief=tk.RAISED, borderwidth=1)
     
     def set_eraser(self):
         self.current_color = None
         # Unhighlight all segment buttons
         for button in self.segment_buttons:
-            button.config(relief=tk.RAISED, borderwidth=1)
+            if button is not None:  # Check if button exists
+                button.config(relief=tk.RAISED, borderwidth=1)
     
     def update_image(self):
         if not self.original_images:
@@ -1883,9 +2722,6 @@ class TissueSegmentationTool:
         base_name = os.path.splitext(os.path.basename(self.image_paths[0]))[0]
         
         try:
-            # Create directory if it doesn't exist
-            os.makedirs(save_dir, exist_ok=True)
-            
             # Save each segmentation (one per original image)
             for i, mask in enumerate(self.segmentation_masks):
                 # Create a new RGB image with black background
@@ -1918,10 +2754,38 @@ class TissueSegmentationTool:
                 # Save the image
                 save_path = os.path.join(save_dir, filename)
                 segmented_img.save(save_path)
+
+
+                            # Create filenames
+                if len(self.original_images) > 1:
+                    seg_filename = f"segmented_{base_name}_slice_{i+1}.png"
+                    orig_filename = f"original_{base_name}_slice_{i+1}.png"
+                else:
+                    seg_filename = f"segmented_{base_name}.png"
+                    orig_filename = f"original_{base_name}.png"
+                
+                # Clean filenames to be valid
+                seg_filename = re.sub(r'[\\/*?:"<>|]', '_', seg_filename)
+                orig_filename = re.sub(r'[\\/*?:"<>|]', '_', orig_filename)
+                
+                # Save the segmentation image
+                seg_save_path = os.path.join(save_dir, seg_filename)
+                segmented_img.save(seg_save_path)
+                
+                # Save the original image
+                orig_save_path = os.path.join(save_dir, orig_filename)
+                orig_img=self.original_images[self.current_image_index]
+                orig_img.save(orig_save_path)
+
+
+
             
             messagebox.showinfo("Success", f"Segmentations saved to {save_dir}")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to save segmentations: {str(e)}")
+            messagebox.showerror("Error", f"Failed to save segmentations: {str(e)}")           # Create directory if it doesn't exist
+            os.makedirs(save_dir, exist_ok=True)
+            
+ 
     
     def apply_custom_brush_size(self):
         try:
@@ -1947,8 +2811,23 @@ class TissueSegmentationTool:
             self.save_segmentations()
         
         # Move to next file
+        print('current_file_idx', self.current_file_idx)
         self.current_file_idx += 1
         next_file = self.directory_files[self.current_file_idx]
+        # next_file=self.current_directory[self.current_file_idx]
+
+        # def get_next_file(folder, current_index, ext=".tif"):
+        #     files = [f for f in os.listdir(folder) if f.endswith(ext) and os.path.splitext(f)[0].isdigit()]
+        #     numeric_indices = sorted(int(os.path.splitext(f)[0]) for f in files)
+            
+        #     for idx in numeric_indices:
+        #         if idx > current_index:
+        #             return f"{idx}{ext}"  # Return filename of next higher index
+        #     return None  # No next file
+
+        # next_file=get_next_file(self.current_directory, self.current_file_idx, ".tif")
+        # self.current_file_idx += 1
+
         self.image_paths = [next_file]
         
         # Reset zoom
@@ -1974,11 +2853,10 @@ class TissueSegmentationTool:
         if file_ext == '.nd2':
             self.process_nd2_file(next_file)
         elif file_ext == '.oib':
-            if not has_aicsimageio:
-                messagebox.showerror("Error", "OIB file support is not available. Please install aicsimageio package using pip.")
-                return
             self.process_oib_file(next_file)
-        elif file_ext in ['.jpg', '.jpeg', '.png', '.tif', '.tiff']:
+        elif file_ext in ['.tif', '.tiff']:
+            self.process_multipagetiff_image(next_file)
+        elif file_ext in ['.jpg', '.jpeg', '.png']:
             self.process_regular_image(next_file)
         else:
 
@@ -2021,11 +2899,10 @@ class TissueSegmentationTool:
         if file_ext == '.nd2':
             self.process_nd2_file(prev_file)
         elif file_ext == '.oib':
-            if not has_aicsimageio:
-                messagebox.showerror("Error", "OIB file support is not available. Please install aicsimageio package using pip.")
-                return
             self.process_oib_file(prev_file)
-        elif file_ext in ['.jpg', '.jpeg', '.png', '.tif', '.tiff']:
+        elif file_ext in ['.tif', '.tiff']:
+            self.process_multipagetiff_image(prev_file)
+        elif file_ext in ['.jpg', '.jpeg', '.png']:
             self.process_regular_image(prev_file)
         else:
 
@@ -2296,6 +3173,8 @@ class TissueSegmentationTool:
         file_ext = os.path.splitext(image_files[0])[1].lower()
         if file_ext == '.nd2':
             self.process_nd2_file(image_files[0])
+        elif file_ext == '.oib':
+            self.process_oib_file(image_files[0])
         elif file_ext in ['.jpg', '.jpeg', '.png', '.tif', '.tiff']:
             self.process_regular_image(image_files[0])
         else:
@@ -2465,7 +3344,20 @@ class TissueSegmentationTool:
         if not self.directory_files or len(self.directory_files) <= 1:
             messagebox.showerror("Error", "No other images available in folder")
             return
+        # Debug print to check directory files
+        print(f"Directory files: {[os.path.basename(f) for f in self.directory_files]}")
+        print(f"Current file index: {self.current_file_idx}")
+        print(f"Current file: {os.path.basename(self.directory_files[self.current_file_idx])}")
 
+        # Get remaining files (files after current one)
+        remaining_files = self.directory_files[self.current_file_idx + 1:]
+        if not remaining_files:
+            messagebox.showerror("Error", "No more files available in folder")
+            return
+            
+        print(f"Remaining files: {[os.path.basename(f) for f in remaining_files]}")
+        print(f"Requested auto-segmentation for {num_images} files")
+        
         progress_window = None
         try:
             # Create progress window
@@ -2605,12 +3497,24 @@ class TissueSegmentationTool:
         
         ttk.Label(frame, text="Auto-Segmentation Options", font=("Arial", 12, "bold")).pack(pady=10)
         
+          # Determine if current file is a TIFF file
+        current_file = self.directory_files[self.current_file_idx] if self.directory_files else ""
+        file_ext = os.path.splitext(current_file)[1].lower() if current_file else ""
+        is_2d = file_ext in ['.tif', '.tiff', '.jpg', '.png']
+    
+
+
         # Option selection
         option_var = tk.StringVar(value="slices")
         
         # Option 1: Subsequent slices (for ND2 files)
         slices_frame = ttk.LabelFrame(frame, text="Subsequent Slices")
         slices_frame.pack(fill=tk.X, pady=5)
+
+        max_slices = len(self.original_images) - self.current_image_index - 1
+
+        # If this is a TIFF file with only one frame, disable the slices option
+        slices_disabled = is_2d and max_slices <= 0
         
         slices_radio = ttk.Radiobutton(
             slices_frame,
@@ -2628,19 +3532,8 @@ class TissueSegmentationTool:
         
         ttk.Label(slices_control_frame, text="Number of slices:").pack(side=tk.LEFT)
         
-        slices_var = tk.StringVar(value="1")
-        slices_spinbox = ttk.Spinbox(
-            slices_control_frame,
-            from_=1,
-            to=max(1, max_slices),
-            textvariable=slices_var,
-            width=10
-        )
-        slices_spinbox.pack(side=tk.LEFT, padx=5)
-        
-        ttk.Label(slices_control_frame, text=f"(Max: {max_slices})").pack(side=tk.LEFT, padx=5)
-        
-        # Option 2: Folder images
+
+            # Option 2: Folder images
         folder_frame = ttk.LabelFrame(frame, text="Folder Images")
         folder_frame.pack(fill=tk.X, pady=5)
         
@@ -2658,7 +3551,7 @@ class TissueSegmentationTool:
         # Calculate available folder images
         available_files = 0
         if self.directory_files:
-            available_files = len(self.directory_files) - 1  # Exclude current file
+            available_files = len(self.directory_files) - self.current_file_idx - 1  # Exclude current file and already processed files
         
         ttk.Label(folder_control_frame, text="Number of images:").pack(side=tk.LEFT)
         
@@ -2674,6 +3567,56 @@ class TissueSegmentationTool:
         
         ttk.Label(folder_control_frame, text=f"(Available: {available_files})").pack(side=tk.LEFT, padx=5)
         
+
+
+
+        slices_var = tk.StringVar(value="1")
+        slices_spinbox = ttk.Spinbox(
+            slices_control_frame,
+            from_=1,
+            to=max(1, max_slices),
+            textvariable=slices_var,
+            width=10,
+            state="disabled" if slices_disabled else "normal"
+        )
+        slices_spinbox.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(slices_control_frame, text=f"(Max: {max_slices})").pack(side=tk.LEFT, padx=5)
+        
+        # Option 2: Folder images
+        # folder_frame = ttk.LabelFrame(frame, text="Folder Images")
+        # folder_frame.pack(fill=tk.X, pady=5)
+        
+        # folder_radio = ttk.Radiobutton(
+        #     folder_frame,
+        #     text="Apply to other images in folder",
+        #     variable=option_var,
+        #     value="folder"
+        # )
+        # folder_radio.pack(anchor=tk.W, padx=10, pady=5)
+        
+        # folder_control_frame = ttk.Frame(folder_frame)
+        # folder_control_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # # Calculate available folder images
+        # available_files = 0
+        # if self.directory_files:
+        #     available_files = len(self.directory_files) - 1  # Exclude current file
+        
+        # ttk.Label(folder_control_frame, text="Number of images:").pack(side=tk.LEFT)
+        
+        # folder_var = tk.StringVar(value="1")
+        # folder_spinbox = ttk.Spinbox(
+        #     folder_control_frame,
+        #     from_=1,
+        #     to=max(1, available_files),
+        #     textvariable=folder_var,
+        #     width=10
+        # )
+        # folder_spinbox.pack(side=tk.LEFT, padx=5)
+        
+        # ttk.Label(folder_control_frame, text=f"(Available: {available_files})").pack(side=tk.LEFT, padx=5)
+        
         # Buttons
         button_frame = ttk.Frame(frame)
         button_frame.pack(fill=tk.X, pady=20)
@@ -2688,10 +3631,34 @@ class TissueSegmentationTool:
             try:
                 if option_var.get() == "slices":
                     num_slices = int(slices_var.get())
+                    
+                    # Check if there are enough slices
+                    if num_slices > max_slices:
+                        # If not enough slices but folder images are available, suggest using folder option
+                        if available_files > 0:
+                            if messagebox.askyesno("Not enough slices", 
+                                                f"There aren't enough slices in the current file. Would you like to use folder images instead?"):
+                                option_var.set("folder")
+                                num_images = min(int(folder_var.get()), available_files)
+                                dialog.destroy()
+                                self.auto_segment_folder_images(num_images)
+                                return
+                            else:
+                                return
+                        else:
+                            messagebox.showerror("Error", "Not enough subsequent slices available")
+                            return
+                            
                     dialog.destroy()
                     self.auto_segment_slices(num_slices)
                 else:  # folder
                     num_images = int(folder_var.get())
+                    
+                    # Check if there are enough folder images
+                    if num_images > available_files:
+                        messagebox.showerror("Error", f"Only {available_files} images available in folder")
+                        return
+                        
                     dialog.destroy()
                     self.auto_segment_folder_images(num_images)
             except ValueError:
@@ -2945,9 +3912,7 @@ class TissueSegmentationTool:
         
         try:
             if file_ext == '.nd2':
-                if not (has_nd2reader or has_nd2):
-                    messagebox.showerror("Error", "ND2 file support is not available. Please install nd2reader or nd2 package using pip.")
-                    return  # Fixed: Should return, not process
+                
                 
                 self.process_nd2_file(file_path)
                 loading_successful = len(self.original_images) > 0
@@ -2958,17 +3923,22 @@ class TissueSegmentationTool:
                         self.show_nd2_troubleshooting()
                         return
             elif file_ext == '.oib':
-                if not has_aicsimageio:
-                    messagebox.showerror("Error", "OIB file support is not available. Please install aicsimageio package using pip.")
-                    return
-                
                 self.process_oib_file(file_path)
                 loading_successful = len(self.original_images) > 0
-                
+
                 if not loading_successful:
-                    messagebox.showerror("Error", "Failed to load OIB file")
-                    return
-            elif file_ext in ['.jpg', '.jpeg', '.png', '.tif', '.tiff']:
+                    if messagebox.showinfo("oib Loading Failed", 
+                                           "Failed to load oib file"):
+                        return
+            elif file_ext in ['.tif', '.tiff']:
+                self.process_multipagetiff_image(file_path)
+                loading_successful = len(self.original_images) > 0
+
+                if not loading_successful:
+                    if messagebox.showinfo("tiff Loading Failed", 
+                                           "Failed to load oib file"):
+                        return
+            elif file_ext in ['.jpg', '.jpeg', '.png']:
                 self.process_regular_image(file_path)
                 loading_successful = len(self.original_images) > 0
             else:
@@ -3094,57 +4064,7 @@ class TissueSegmentationTool:
             else:
                 self.update_every_n_draws = 10  # Default ultra_fast setting
 
-    def process_oib_file(self, file_path):
-        """Process OIB file with basic multi-channel support"""
-        try:
-            aics_img = AICSImage(file_path)
-            raw_data = aics_img.data  # Shape is typically (T, C, Z, Y, X)
-            
-            # Store raw data for later use
-            self.raw_image_data = raw_data
-            self.original_shape = raw_data.shape
-            self.original_raw_data = raw_data.copy()  # Backup for cropping
-            
-            # Get dimension information
-            dims = aics_img.dims.order  # String like "TCZYX"
-            
-            # Extract channel information if available
-            if 'C' in dims:
-                c_idx = dims.index('C')
-                num_channels = raw_data.shape[c_idx]
-                
-                if num_channels > 1:
-                    # Try to get channel names
-                    try:
-                        channel_names = aics_img.channel_names
-                        if channel_names and len(channel_names) == num_channels:
-                            self.current_channels = [f"Ch{i}: {name}" for i, name in enumerate(channel_names)]
-                        else:
-                            self.current_channels = [f"Channel {i}" for i in range(num_channels)]
-                    except:
-                        self.current_channels = [f"Channel {i}" for i in range(num_channels)]
-                else:
-                    self.current_channels = ["Single Channel"]
-            else:
-                self.current_channels = ["Single Channel"]
-            
-            # Initialize with all channels combined
-            self.selected_channel = None
-            
-            # Process the data using the regenerate method
-            self.regenerate_images_from_raw_data()
-            
-            # Initialize segmentation masks
-            self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0)) for img in self.original_images]
-            self.current_image_index = 0
-            
-            print(f"Loaded OIB file: {raw_data.shape}, {len(self.current_channels)} channels, {len(self.original_images)} images")
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to process OIB file: {str(e)}")
-            self.original_images = []
-            self.segmentation_masks = []
-            self.current_image_index = 0
+   
     
     def array_to_pil_image(self, img_array):
         """Convert numpy array to PIL Image (similar to process_nd2_array)"""
@@ -3213,28 +4133,28 @@ class TissueSegmentationTool:
                 )
                 channel_rb.pack(anchor=tk.W, padx=5, pady=2)
         
-        # Crop controls frame
-        if self.raw_image_data is not None:
-            crop_frame = ttk.LabelFrame(parent_frame, text="Crop Controls")
-            crop_frame.pack(fill=tk.X, pady=5)
+        # # Crop controls frame
+        # if self.raw_image_data is not None:
+        #     crop_frame = ttk.LabelFrame(parent_frame, text="Crop Controls")
+        #     crop_frame.pack(fill=tk.X, pady=5)
             
-            crop_button = ttk.Button(
-                crop_frame, 
-                text="Configure Crop Region", 
-                command=self.show_crop_dialog
-            )
-            crop_button.pack(fill=tk.X, padx=5, pady=5)
+        #     crop_button = ttk.Button(
+        #         crop_frame, 
+        #         text="Configure Crop Region", 
+        #         command=self.show_crop_dialog
+        #     )
+        #     crop_button.pack(fill=tk.X, padx=5, pady=5)
             
-            if self.is_cropped:
-                status_label = ttk.Label(crop_frame, text="✓ Image is cropped", foreground="green")
-                status_label.pack(padx=5, pady=2)
+        #     if self.is_cropped:
+        #         status_label = ttk.Label(crop_frame, text="✓ Image is cropped", foreground="green")
+        #         status_label.pack(padx=5, pady=2)
                 
-                reset_button = ttk.Button(
-                    crop_frame, 
-                    text="Reset to Original", 
-                    command=self.reset_crop
-                )
-                reset_button.pack(fill=tk.X, padx=5, pady=2)
+        #         reset_button = ttk.Button(
+        #             crop_frame, 
+        #             text="Reset to Original", 
+        #             command=self.reset_crop
+        #         )
+        #         reset_button.pack(fill=tk.X, padx=5, pady=2)
         
         # Export controls frame
         export_frame = ttk.LabelFrame(parent_frame, text="Export")
@@ -3261,6 +4181,15 @@ class TissueSegmentationTool:
                 command=self.export_multichannel_combined
             )
             export_combined_button.pack(fill=tk.X, padx=5, pady=2)
+        
+        # Add crop and save 3D data button if raw data is available
+        if self.raw_image_data is not None:
+            crop_save_button = ttk.Button(
+                export_frame, 
+                text="Crop & Save 3D Data", 
+                command=self.show_crop_and_save_dialog
+            )
+            crop_save_button.pack(fill=tk.X, padx=5, pady=2)
     
     def on_channel_change(self):
         """Handle channel selection change"""
@@ -3279,123 +4208,389 @@ class TissueSegmentationTool:
             self.regenerate_images_from_raw_data()
             self.update_image()
     
-    def show_crop_dialog(self):
-        """Show dialog for configuring crop region"""
-        if self.raw_image_data is None:
-            messagebox.showwarning("Warning", "No raw data available for cropping")
-            return
+    # def show_crop_dialog(self):
+    #     """Show dialog for selecting crop region using rectangle selection"""
+    #     if self.raw_image_data is None:
+    #         messagebox.showwarning("Warning", "No raw data available for cropping")
+    #         return
+    #     print('shape of raw image dataaaaa', self.raw_image_data.shape())
+    #     # Create a dialog with canvas for rectangle selection
+    #     dialog = tk.Toplevel(self.root)
+    #     dialog.title("Select Crop Region")
+    #     dialog.geometry("800x700")  # Made taller to accommodate zoom controls
+    #     dialog.transient(self.root)
+    #     dialog.grab_set()
         
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Configure Crop Region")
-        dialog.geometry("500x400")
-        dialog.transient(self.root)
-        dialog.grab_set()
+    #     # Main frame
+    #     main_frame = ttk.Frame(dialog, padding="10")
+    #     main_frame.pack(fill=tk.BOTH, expand=True)
         
-        frame = ttk.Frame(dialog, padding="20")
-        frame.pack(fill=tk.BOTH, expand=True)
+    #     # Instructions
+    #     ttk.Label(main_frame, text="Draw a rectangle to select the region to crop", 
+    #              font=("Arial", 10, "bold")).pack(pady=5)
         
-        ttk.Label(frame, text="Crop Region Configuration", font=("Arial", 12, "bold")).pack(pady=10)
-        ttk.Label(frame, text=f"Original Shape: {self.original_shape}", font=("Arial", 10)).pack(pady=5)
+    #     # Add zoom controls
+    #     zoom_frame = ttk.Frame(main_frame)
+    #     zoom_frame.pack(fill=tk.X, pady=5)
         
-        # Crop controls for each dimension
-        crop_entries = {}
-        dimensions = ['T', 'C', 'Z', 'Y', 'X']  # Common dimension order
+    #     ttk.Label(zoom_frame, text="Zoom:").pack(side=tk.LEFT, padx=5)
         
-        controls_frame = ttk.Frame(frame)
-        controls_frame.pack(fill=tk.X, pady=10)
+    #     zoom_var = tk.DoubleVar(value=1.0)
         
-        for i, dim in enumerate(dimensions):
-            if i < len(self.original_shape) and self.original_shape[i] > 1:
-                dim_frame = ttk.Frame(controls_frame)
-                dim_frame.pack(fill=tk.X, pady=5)
-                
-                ttk.Label(dim_frame, text=f"{dim} (0-{self.original_shape[i]-1}):").pack(side=tk.LEFT, padx=5)
-                
-                start_entry = ttk.Entry(dim_frame, width=8)
-                start_entry.pack(side=tk.LEFT, padx=2)
-                start_entry.insert(0, "0")
-                
-                ttk.Label(dim_frame, text="to").pack(side=tk.LEFT, padx=2)
-                
-                end_entry = ttk.Entry(dim_frame, width=8)
-                end_entry.pack(side=tk.LEFT, padx=2)
-                end_entry.insert(0, str(self.original_shape[i] - 1))
-                
-                crop_entries[i] = (start_entry, end_entry, self.original_shape[i])
+    #     def update_zoom(event=None):
+    #         zoom_level = zoom_var.get()
+    #         zoom_label.config(text=f"{zoom_level:.1f}x")
+    #         display_image_with_zoom()
         
-        # Buttons
-        button_frame = ttk.Frame(frame)
-        button_frame.pack(fill=tk.X, pady=20)
+    #     zoom_slider = ttk.Scale(
+    #         zoom_frame,
+    #         from_=0.1,
+    #         to=5.0,
+    #         orient=tk.HORIZONTAL,
+    #         variable=zoom_var,
+    #         command=update_zoom,
+    #         length=200
+    #     )
+    #     zoom_slider.pack(side=tk.LEFT, padx=5)
         
-        def apply_crop():
-            try:
-                slices = []
-                for i in range(len(self.original_shape)):
-                    if i in crop_entries:
-                        start_val = int(crop_entries[i][0].get())
-                        end_val = int(crop_entries[i][1].get())
-                        max_val = crop_entries[i][2]
-                        
-                        if start_val < 0 or end_val >= max_val or start_val > end_val:
-                            messagebox.showerror("Error", f"Invalid crop range for dimension {i}")
-                            return
-                        
-                        slices.append(slice(start_val, end_val + 1))
-                    else:
-                        slices.append(slice(None))
-                
-                # Apply crop
-                cropped_data = self.original_raw_data[tuple(slices)]
-                self.raw_image_data = cropped_data
-                self.is_cropped = True
-                
-                # Regenerate images
-                self.regenerate_images_from_raw_data()
-                
-                # Update segmentation masks
-                self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0)) for img in self.original_images]
-                self.current_image_index = 0
-                
-                dialog.destroy()
-                
-                # Refresh UI
-                self.create_annotation_window()
-                
-                messagebox.showinfo("Success", "Crop applied successfully")
-                
-            except ValueError:
-                messagebox.showerror("Error", "Please enter valid numeric values")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to apply crop: {str(e)}")
+    #     zoom_label = ttk.Label(zoom_frame, text="1.0x", width=5)
+    #     zoom_label.pack(side=tk.LEFT, padx=5)
         
-        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Apply Crop", command=apply_crop).pack(side=tk.RIGHT, padx=5)
+    #     zoom_reset = ttk.Button(zoom_frame, text="Reset Zoom", 
+    #                        command=lambda: (zoom_var.set(1.0), update_zoom()))
+    #     zoom_reset.pack(side=tk.LEFT, padx=5)
         
-        # Center dialog
-        dialog.update_idletasks()
-        width = dialog.winfo_width()
-        height = dialog.winfo_height()
-        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
-        y = (dialog.winfo_screenheight() // 2) - (height // 2)
-        dialog.geometry(f'{width}x{height}+{x}+{y}')
+    #     # Canvas for image display with scrollbars
+    #     canvas_frame = ttk.Frame(main_frame)
+    #     canvas_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+    #     h_scrollbar = ttk.Scrollbar(canvas_frame, orient=tk.HORIZONTAL)
+    #     h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        
+    #     v_scrollbar = ttk.Scrollbar(canvas_frame, orient=tk.VERTICAL)
+    #     v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+    #     canvas = tk.Canvas(
+    #         canvas_frame, 
+    #         bg="black",
+    #         xscrollcommand=h_scrollbar.set,
+    #         yscrollcommand=v_scrollbar.set
+    #     )
+    #     canvas.pack(fill=tk.BOTH, expand=True)
+        
+    #     h_scrollbar.config(command=canvas.xview)
+    #     v_scrollbar.config(command=canvas.yview)
+        
+    #     # Enable mouse wheel scrolling
+    #     def on_mousewheel(event):
+    #         if event.state & 0x4:  # Check if Ctrl key is pressed
+    #             # Zoom with Ctrl+Wheel
+    #             if event.delta > 0:
+    #                 new_zoom = min(5.0, zoom_var.get() + 0.1)
+    #             else:
+    #                 new_zoom = max(0.1, zoom_var.get() - 0.1)
+    #             zoom_var.set(new_zoom)
+    #             update_zoom()
+    #         else:
+    #             # Scroll vertically
+    #             canvas.yview_scroll(-1 * (event.delta // 120), "units")
+        
+    #     canvas.bind("<MouseWheel>", on_mousewheel)  # Windows
+    #     canvas.bind("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))  # Linux
+    #     canvas.bind("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))  # Linux
+        
+    #     # Variables for selection
+    #     selection_rect = None
+    #     start_x, start_y = 0, 0
+    #     end_x, end_y = 0, 0
+        
+    #     # Get the image data for the current frame
+    #     if len(self.original_shape) == 2:  # Single 2D image
+    #         img_array = self.raw_image_data
+    #     elif len(self.original_shape) == 3:  # (Z, Y, X) 
+    #         img_array = self.raw_image_data[self.current_image_index]
+    #     elif len(self.original_shape) == 4:  # (C, Z, Y, X)
+    #         img_array = self.raw_image_data[self.current_image_index]
+    #     else:
+    #         img_array = self.raw_image_data
+        
+    #     # display_img = Image.fromarray(img_array)
+    #     display_img = Image.fromarray(img_array)
+
+    #     print('shape of display image', display_img.shape)
+    #     # Convert to PIL image
+        
+        
+    #     # if isinstance(img_array, np.ndarray):
+    #     #     # Normalize for display
+    #     #     if img_array.dtype != np.uint8:
+    #     #         img_array = ((img_array - img_array.min()) / (img_array.max() - img_array.min()) * 255).astype(np.uint8)
+            
+    #     #     # Handle different channel configurations
+    #     #     if len(img_array.shape) == 2:  # Grayscale
+    #     #         display_img = Image.fromarray(img_array)
+    #     #     elif len(img_array.shape) == 3:  # RGB or similar
+    #     #         if img_array.shape[2] == 1:
+    #     #             display_img = Image.fromarray(img_array[:,:,0])
+    #     #         elif img_array.shape[2] == 2:
+    #     #             display_img = Image.fromarray(0.5*img_array[:,:,0]+ 0.5*img_array[:,:,1])
+    #     #         elif img_array.shape[2] == 3:
+    #     #             display_img = Image.fromarray(0.5*img_array[:,:,0]+ 0.5*img_array[:,:,1])
+    #     #         elif img_array.shape[2] == 4:
+    #     #             display_img = Image.fromarray(img_array)
+    #     #         else:
+    #     #             # Take first channel for display
+    #     #             display_img = Image.fromarray(img_array[:,:,0])
+    #     #     elif len(img_array.shape) == 4:  # RGB or similar
+    #     #         if img_array.shape[0] == 2:
+    #     #             display_img = Image.fromarray(0.5*img_array[:,:,0]+ 0.5*img_array[:,:,1])
+
+    #     #         else:
+    #     #             # Take first channel for display
+    #     #             display_img = Image.fromarray(img_array[:,:,0])
+    #     #     else:
+    #     #         display_img = Image.fromarray(np.zeros((100, 100), dtype=np.uint8))
+    #     # else:
+    #     #     display_img = Image.fromarray(np.zeros((100, 100), dtype=np.uint8))
+        
+    #     # Store original image dimensions
+    #     original_width, original_height = display_img.size
+    #     print('original width and height', original_width, original_height)
+        
+    #     # Function to display image with current zoom
+    #     def display_image_with_zoom():
+    #         zoom = zoom_var.get()
+            
+    #         # Calculate new dimensions
+    #         new_width = int(original_width * zoom)
+    #         new_height = int(original_height * zoom)
+            
+    #         # Resize image for display
+    #         if zoom == 1.0:
+    #             resized_img = display_img
+    #         else:
+    #             resized_img = display_img.resize((new_width, new_height), Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS)
+            
+    #         # Convert to PhotoImage
+    #         photo_img = ImageTk.PhotoImage(resized_img)
+            
+    #         # Update canvas
+    #         canvas.delete("all")
+    #         canvas.config(scrollregion=(0, 0, new_width, new_height))
+    #         canvas.create_image(0, 0, anchor=tk.NW, image=photo_img)
+    #         canvas.image = photo_img  # Keep reference
+            
+    #         # Redraw selection rectangle if it exists
+    #         if start_x != end_x and start_y != end_y:
+    #             # Scale the coordinates to match zoom
+    #             scaled_start_x = int(start_x * zoom)
+    #             scaled_start_y = int(start_y * zoom)
+    #             scaled_end_x = int(end_x * zoom)
+    #             scaled_end_y = int(end_y * zoom)
+                
+    #             canvas.create_rectangle(
+    #                 scaled_start_x, scaled_start_y, 
+    #                 scaled_end_x, scaled_end_y,
+    #                 outline="red", width=2, tags="selection"
+    #             )
+        
+    #     # Initial display
+    #     display_image_with_zoom()
+        
+    #     # Selection coordinates display
+    #     coords_var = tk.StringVar(value="Selection: None")
+    #     ttk.Label(main_frame, textvariable=coords_var).pack(pady=5)
+        
+    #     # Z-dimension controls if applicable
+    #     z_start_var = tk.StringVar(value="0")
+    #     z_end_var = tk.StringVar(value="0")
+    #     has_z_dimension = True
+    #     z_size = 0
+        
+
+        
+    #     if has_z_dimension:
+    #         z_frame = ttk.LabelFrame(main_frame, text="Z-Dimension Range")
+    #         z_frame.pack(fill=tk.X, pady=5)
+            
+    #         z_grid = ttk.Frame(z_frame)
+    #         z_grid.pack(pady=10, padx=10, fill=tk.X)
+            
+    #         ttk.Label(z_grid, text="Start Z:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+    #         ttk.Label(z_grid, text="End Z:").grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
+            
+    #         z_start_var.set("0")
+    #         z_end_var.set(str(z_size))
+            
+    #         z_start_entry = ttk.Entry(z_grid, textvariable=z_start_var, width=10)
+    #         z_start_entry.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+            
+    #         z_end_entry = ttk.Entry(z_grid, textvariable=z_end_var, width=10)
+    #         z_end_entry.grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
+            
+    #         ttk.Label(z_grid, text=f"(Max: {z_size})").grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
+        
+    #     # Functions for rectangle selection
+    #     def start_selection(event):
+    #         nonlocal selection_rect, start_x, start_y
+            
+    #         # Convert canvas coordinates to original image coordinates
+    #         zoom = zoom_var.get()
+    #         canvas_x = canvas.canvasx(event.x)
+    #         canvas_y = canvas.canvasy(event.y)
+            
+    #         # Convert to original image coordinates
+    #         start_x = int(canvas_x / zoom)
+    #         start_y = int(canvas_y / zoom)
+            
+    #         # Create new rectangle
+    #         selection_rect = canvas.create_rectangle(
+    #             canvas_x, canvas_y, canvas_x, canvas_y,
+    #             outline="red", width=2, tags="selection"
+    #         )
+        
+    #     def update_selection(event):
+    #         nonlocal end_x, end_y
+            
+    #         if selection_rect:
+    #             # Convert canvas coordinates to original image coordinates
+    #             zoom = zoom_var.get()
+    #             canvas_x = canvas.canvasx(event.x)
+    #             canvas_y = canvas.canvasy(event.y)
+                
+    #             # Convert to original image coordinates
+    #             end_x = int(canvas_x / zoom)
+    #             end_y = int(canvas_y / zoom)
+                
+    #             # Update rectangle
+    #             canvas.coords(selection_rect, 
+    #                          start_x * zoom, start_y * zoom, 
+    #                          canvas_x, canvas_y)
+                
+    #             # Update coordinates display
+    #             width = abs(end_x - start_x)
+    #             height = abs(end_y - start_y)
+    #             coords_var.set(f"Selection: ({min(start_x, end_x)}, {min(start_y, end_y)}) to " +
+    #                           f"({max(start_x, end_x)}, {max(start_y, end_y)}), Size: {width}x{height}")
+        
+    #     def end_selection(event):
+    #         nonlocal end_x, end_y
+            
+    #         if selection_rect:
+    #             # Convert canvas coordinates to original image coordinates
+    #             zoom = zoom_var.get()
+    #             canvas_x = canvas.canvasx(event.x)
+    #             canvas_y = canvas.canvasy(event.y)
+                
+    #             # Convert to original image coordinates
+    #             end_x = int(canvas_x / zoom)
+    #             end_y = int(canvas_y / zoom)
+                
+    #             # Ensure coordinates are within image bounds
+    #             end_x = max(0, min(end_x, original_width))
+    #             end_y = max(0, min(end_y, original_height))
+                
+    #             # Update rectangle
+    #             canvas.coords(selection_rect, 
+    #                          start_x * zoom, start_y * zoom, 
+    #                          end_x * zoom, end_y * zoom)
+        
+    #     # Bind events
+    #     canvas.bind("<ButtonPress-1>", start_selection)
+    #     canvas.bind("<B1-Motion>", update_selection)
+    #     canvas.bind("<ButtonRelease-1>", end_selection)
+        
+    #     # Buttons
+    #     button_frame = ttk.Frame(main_frame)
+    #     button_frame.pack(fill=tk.X, pady=10)
+        
+    #     def apply_crop():
+    #         # Get selection coordinates
+    #         x_start = min(start_x, end_x)
+    #         y_start = min(start_y, end_y)
+    #         x_end = max(start_x, end_x)
+    #         y_end = max(start_y, end_y)
+            
+    #         # Validate selection
+    #         if x_start == x_end or y_start == y_end:
+    #             messagebox.showerror("Error", "Invalid selection. Please select a region.")
+    #             return
+            
+    #         # Get Z range if applicable
+    #         z_start = 0
+    #         z_end = 0
+    #         if has_z_dimension:
+    #             try:
+    #                 z_start = int(z_start_var.get())
+    #                 z_end = int(z_end_var.get())
+                    
+    #                 if z_start < 0 or z_end > z_size or z_start > z_end:
+    #                     messagebox.showerror("Error", f"Invalid Z range. Must be between 0 and {z_size}.")
+    #                     return
+    #             except ValueError:
+    #                 messagebox.showerror("Error", "Please enter valid Z range values.")
+    #                 return
+            
+    #         # Perform crop on raw data
+    #         try:
+    #             if len(self.original_shape) == 2:  # Single 2D image
+    #                 cropped_data = self.raw_image_data[y_start:y_end+1, x_start:x_end+1]
+    #             elif len(self.original_shape) == 3:
+    #                 if self.original_shape[2] in [3, 4]:  # (Y, X, C)
+    #                     cropped_data = self.raw_image_data[y_start:y_end+1, x_start:x_end+1, :]
+    #                 else:  # (Z, Y, X)
+    #                     cropped_data = self.raw_image_data[z_start:z_end+1, y_start:y_end+1, x_start:x_end+1]
+    #             elif len(self.original_shape) == 4:  # (Z, C, Y, X) or similar
+    #                 cropped_data = self.raw_image_data[:, z_start:z_end+1, y_start:y_end+1, x_start:x_end+1]
+    #             else:
+    #                 messagebox.showerror("Error", "Unsupported data shape for cropping.")
+    #                 return
+                
+    #             # Update raw data
+    #             self.raw_image_data = cropped_data
+    #             self.original_shape = cropped_data.shape
+                
+    #             # Update display
+    #             self.regenerate_images_from_raw_data()
+                
+    #             # Close dialog
+    #             dialog.destroy()
+                
+    #             # Show success message
+    #             messagebox.showinfo("Success", f"Image cropped to region ({x_start}, {y_start}) - ({x_end}, {y_end})" + 
+    #                               (f" and Z range {z_start}-{z_end}" if has_z_dimension else ""))
+                
+    #         except Exception as e:
+    #             messagebox.showerror("Error", f"Failed to crop: {str(e)}")
+        
+    #     ttk.Button(button_frame, text="Apply Crop", command=apply_crop).pack(side=tk.LEFT, padx=5)
+    #     ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT, padx=5)
+        
+    #     # Center dialog
+    #     dialog.update_idletasks()
+    #     width = dialog.winfo_width()
+    #     height = dialog.winfo_height()
+    #     x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+    #     y = (dialog.winfo_screenheight() // 2) - (height // 2)
+    #     dialog.geometry(f'{width}x{height}+{x}+{y}')
     
-    def reset_crop(self):
-        """Reset to original uncropped data"""
-        if self.original_raw_data is not None:
-            self.raw_image_data = self.original_raw_data.copy()
-            self.is_cropped = False
+    # def reset_crop(self):
+    #     """Reset to original uncropped data"""
+    #     if self.original_raw_data is not None:
+    #         self.raw_image_data = self.original_raw_data.copy()
+    #         self.is_cropped = False
             
-            # Regenerate images
-            self.regenerate_images_from_raw_data()
+    #         # Regenerate images
+    #         self.regenerate_images_from_raw_data()
             
-            # Update segmentation masks
-            self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0)) for img in self.original_images]
-            self.current_image_index = 0
+    #         # Update segmentation masks
+    #         self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0)) for img in self.original_images]
+    #         self.current_image_index = 0
             
-            # Refresh UI
-            self.create_annotation_window()
+    #         # Refresh UI
+    #         self.create_annotation_window()
             
-            messagebox.showinfo("Success", "Reset to original data")
+    #         messagebox.showinfo("Success", "Reset to original data")
     
     def regenerate_images_from_raw_data(self):
         """Regenerate display images from raw data based on current settings"""
@@ -3542,6 +4737,719 @@ class TissueSegmentationTool:
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export multi-channel combined: {str(e)}")
+    
+    def show_crop_and_save_dialog(self):
+        """Show dialog for cropping and saving 3D data as ND2 or OIB file"""
+        if self.raw_image_data is None:
+            messagebox.showwarning("Warning", "No 3D data available for cropping and saving")
+            return
+        
+        # Create dialog with canvas for rectangle selection
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Crop and Save 3D Data")
+        dialog.geometry("800x1000")  # Made larger to accommodate all controls
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Main frame
+        frame = ttk.Frame(dialog, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(frame, text="Crop and Save 3D Data", font=("Arial", 14, "bold")).pack(pady=10)
+        ttk.Label(frame, text=f"Original Shape: {self.original_shape}", font=("Arial", 10)).pack(pady=5)
+        
+        # 3D Dimensions frame
+        dim_frame = ttk.LabelFrame(frame, text="3D Dimensions")
+        dim_frame.pack(fill=tk.X, pady=10, padx=5)
+        
+        # Determine available dimensions based on shape
+        has_z_dimension = False
+        has_c_dimension = False
+        has_t_dimension = False
+        z_size = c_size = t_size = 0
+        
+        # Set up dimension ranges based on data shape
+        if len(self.original_shape) == 3 and self.original_shape[2] in [2, 3, 4]:  # (Y, X, C) or similar
+            has_c_dimension = True
+            c_size = self.original_shape[2] - 1
+        elif len(self.original_shape) == 3:  # (Z, Y, X) or similar
+            has_z_dimension = True
+            z_size = self.original_shape[0] - 1
+        elif len(self.original_shape) == 4:  # Could be (T/C, Z, Y, X)
+            has_c_dimension = self.original_shape[0] > 1
+            has_z_dimension = self.original_shape[1] > 1
+            c_size = self.original_shape[0] - 1
+            z_size = self.original_shape[1] - 1
+
+        
+        # Create entry fields for each dimension
+        dim_entries = {}
+        row = 0
+        
+        # Z dimension
+        if has_z_dimension:
+            ttk.Label(dim_frame, text=f"Z Range (0-{z_size}):").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
+            z_start_var = tk.StringVar(value="0")
+            z_start_entry = ttk.Entry(dim_frame, textvariable=z_start_var, width=10)
+            z_start_entry.grid(row=row, column=1, padx=5, pady=5)
+            
+            ttk.Label(dim_frame, text="to").grid(row=row, column=2, padx=5, pady=5)
+            
+            z_end_var = tk.StringVar(value=str(z_size))
+            z_end_entry = ttk.Entry(dim_frame, textvariable=z_end_var, width=10)
+            z_end_entry.grid(row=row, column=3, padx=5, pady=5)
+            
+            dim_entries[1] = (z_start_var, z_end_var, z_size)
+            row += 1
+        
+        # C dimension
+        if has_c_dimension:
+            ttk.Label(dim_frame, text=f"C Range (0-{c_size}):").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
+            c_start_var = tk.StringVar(value="0")
+            c_start_entry = ttk.Entry(dim_frame, textvariable=c_start_var, width=10)
+            c_start_entry.grid(row=row, column=1, padx=5, pady=5)
+            
+            ttk.Label(dim_frame, text="to").grid(row=row, column=2, padx=5, pady=5)
+            
+            c_end_var = tk.StringVar(value=str(c_size))
+            c_end_entry = ttk.Entry(dim_frame, textvariable=c_end_var, width=10)
+            c_end_entry.grid(row=row, column=3, padx=5, pady=5)
+            
+            dim_entries[0] = (c_start_var, c_end_var, c_size)
+            row += 1
+        
+        # T dimension
+        if has_t_dimension:
+            ttk.Label(dim_frame, text=f"T Range (0-{t_size}):").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
+            t_start_var = tk.StringVar(value="0")
+            t_start_entry = ttk.Entry(dim_frame, textvariable=t_start_var, width=10)
+            t_start_entry.grid(row=row, column=1, padx=5, pady=5)
+            
+            ttk.Label(dim_frame, text="to").grid(row=row, column=2, padx=5, pady=5)
+            
+            t_end_var = tk.StringVar(value=str(t_size))
+            t_end_entry = ttk.Entry(dim_frame, textvariable=t_end_var, width=10)
+            t_end_entry.grid(row=row, column=3, padx=5, pady=5)
+            
+            dim_entries[0] = (t_start_var, t_end_var, t_size)
+        
+
+
+
+
+        # Add slice navigation slider
+        slice_nav_frame = ttk.LabelFrame(frame, text="Slice Navigation")
+        slice_nav_frame.pack(fill=tk.X, pady=10, padx=5)
+        
+        # Determine max slice index based on data shape
+        max_slice = 0
+        current_slice_var = tk.IntVar(value=0)
+        
+        if has_z_dimension:
+            max_slice = z_size
+        elif has_c_dimension and not has_z_dimension:
+            max_slice = c_size
+        
+        # Create slider for navigating slices
+        ttk.Label(slice_nav_frame, text="Current Slice:").pack(side=tk.LEFT, padx=5)
+        
+        slice_label = ttk.Label(slice_nav_frame, text="0", width=5)
+        slice_label.pack(side=tk.RIGHT, padx=5)
+        
+        # def update_slice(event=None):
+        #     print('updating slice')
+        #     slice_idx = current_slice_var.get()
+        #     slice_label.config(text=str(slice_idx))
+            
+        #     # Update displayed image based on slice index
+        #     if has_z_dimension and has_c_dimension:  # (C, Z, Y, X)
+        #         c_idx = 0  # Default to first channel
+        #         display_img = Image.fromarray(
+        #             ((self.raw_image_data[c_idx, slice_idx] - self.raw_image_data[c_idx, slice_idx].min()) / 
+        #             (self.raw_image_data[c_idx, slice_idx].max() - self.raw_image_data[c_idx, slice_idx].min() + 1e-8) * 255).astype(np.uint8)
+        #         )
+        #     elif has_c_dimension and self.raw_image_data.shape[2] in [2, 3, 4]:  # (c, Y, X)
+        #         display_img = Image.fromarray(
+        #             ((self.raw_image_data[0] - self.raw_image_data[slice0_idx].min()) / 
+        #             (self.raw_image_data[0].max() - self.raw_image_data[0].min() + 1e-8) * 255).astype(np.uint8)
+        #         )
+        #     elif has_z_dimension:  # (Z, Y, X)
+        #         display_img = Image.fromarray(
+        #             ((self.raw_image_data[slice_idx] - self.raw_image_data[slice_idx].min()) / 
+        #             (self.raw_image_data[slice_idx].max() - self.raw_image_data[slice_idx].min() + 1e-8) * 255).astype(np.uint8)
+        #         )
+        #     else:  # Default to first slice
+        #         display_img = Image.fromarray(
+        #             ((self.raw_image_data[0] - self.raw_image_data[0].min()) / 
+        #             (self.raw_image_data[0].max() - self.raw_image_data[0].min() + 1e-8) * 255).astype(np.uint8)
+        #         )
+            
+        #     # Store original image dimensions
+        #     nonlocal original_width, original_height
+        #     original_width, original_height = display_img.size
+            
+        #     # Update zoom to refresh display
+        #     update_zoom()
+        def update_slice(event=None):
+            slice_idx = current_slice_var.get()
+            slice_label.config(text=str(slice_idx))
+            
+            # Update displayed image based on slice index
+            nonlocal display_img
+            
+            try:
+                if has_z_dimension and has_c_dimension:  # (C, Z, Y, X)
+                    c_idx = 0  # Default to first channel
+                    img_array = self.raw_image_data[c_idx, slice_idx]
+                elif has_z_dimension and self.raw_image_data[2] in [ 2, 3, 4]:  # (Z, Y, X)
+                    img_array = self.raw_image_data[slice_idx]
+                elif has_z_dimension:  # (Z, Y, X)
+                    img_array = self.raw_image_data[slice_idx]
+                else:  # Default to first slice
+                    img_array = self.raw_image_data[0]
+                
+                # Normalize for display
+                if img_array.dtype != np.uint8:
+                    img_array = ((img_array - img_array.min()) / 
+                                (img_array.max() - img_array.min() + 1e-8) * 255).astype(np.uint8)
+                
+                display_img = Image.fromarray(img_array)
+                
+                # Update original dimensions
+                nonlocal original_width, original_height
+                original_width, original_height = display_img.size
+                
+                # Update display with new image
+                update_zoom()
+            except Exception as e:
+                print(f"Error updating slice: {str(e)}")
+        slice_slider = ttk.Scale(
+            slice_nav_frame,
+            from_=0,
+            to=max_slice,
+            orient=tk.HORIZONTAL,
+            variable=current_slice_var,
+            command=update_slice,
+            length=400
+        )
+        slice_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
+
+
+
+            
+
+
+
+
+
+
+
+
+
+        # XY region selection
+        ttk.Label(frame, text="Select XY Region:", font=("Arial", 10, "bold")).pack(pady=5)
+        
+        # Add zoom controls
+        zoom_frame = ttk.Frame(frame)
+        zoom_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(zoom_frame, text="Zoom:").pack(side=tk.LEFT, padx=5)
+        
+        zoom_var = tk.DoubleVar(value=1.0)
+        
+        zoom_slider = ttk.Scale(
+            zoom_frame,
+            from_=0.1,
+            to=5.0,
+            orient=tk.HORIZONTAL,
+            variable=zoom_var,
+            length=200
+        )
+        zoom_slider.pack(side=tk.LEFT, padx=5)
+        
+        zoom_label = ttk.Label(zoom_frame, text="1.0x", width=5)
+        zoom_label.pack(side=tk.LEFT, padx=5)
+        
+        zoom_reset = ttk.Button(zoom_frame, text="Reset Zoom", 
+                           command=lambda: (zoom_var.set(1.0), update_zoom()))
+        zoom_reset.pack(side=tk.LEFT, padx=5)
+        
+        # Canvas for image display with scrollbars
+        canvas_frame = ttk.Frame(frame)
+        canvas_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        h_scrollbar = ttk.Scrollbar(canvas_frame, orient=tk.HORIZONTAL)
+        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        v_scrollbar = ttk.Scrollbar(canvas_frame, orient=tk.VERTICAL)
+        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        canvas = tk.Canvas(
+            canvas_frame, 
+            bg="black",
+            xscrollcommand=h_scrollbar.set,
+            yscrollcommand=v_scrollbar.set,
+            width=600,
+            height=400
+        )
+        canvas.pack(fill=tk.BOTH, expand=True)
+        
+        h_scrollbar.config(command=canvas.xview)
+        v_scrollbar.config(command=canvas.yview)
+        def update_zoom(event=None):
+            zoom = zoom_var.get()
+            zoom_label.config(text=f"{zoom:.1f}x")
+            
+            # Calculate new dimensions
+            new_width = int(original_width * zoom)
+            new_height = int(original_height * zoom)
+            
+            # Resize image for display
+            if zoom == 1.0:
+                resized_img = display_img
+            else:
+                resized_img = display_img.resize((new_width, new_height), Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS)
+            
+            # Convert to PhotoImage
+            photo_img = ImageTk.PhotoImage(resized_img)
+            
+            # Update canvas
+            canvas.delete("all")
+            canvas.config(scrollregion=(0, 0, new_width, new_height))
+            canvas.create_image(0, 0, anchor=tk.NW, image=photo_img)
+            canvas.image = photo_img  # Keep reference
+            
+            # Redraw selection rectangle if it exists
+            if start_x != end_x and start_y != end_y:
+                # Scale the coordinates to match zoom
+                scaled_start_x = int(start_x * zoom)
+                scaled_start_y = int(start_y * zoom)
+                scaled_end_x = int(end_x * zoom)
+                scaled_end_y = int(end_y * zoom)
+                
+                canvas.create_rectangle(
+                    scaled_start_x, scaled_start_y, 
+                    scaled_end_x, scaled_end_y,
+                    outline="red", width=2, tags="selection"
+                )
+        # Enable mouse wheel scrolling
+        def on_mousewheel(event):
+            if event.state & 0x4:  # Check if Ctrl key is pressed
+                # Zoom with Ctrl+Wheel
+                if event.delta > 0:
+                    new_zoom = min(5.0, zoom_var.get() + 0.1)
+                else:
+                    new_zoom = max(0.1, zoom_var.get() - 0.1)
+                zoom_var.set(new_zoom)
+                update_zoom()
+            else:
+                # Scroll vertically
+                canvas.yview_scroll(-1 * (event.delta // 120), "units")
+        
+        canvas.bind("<MouseWheel>", on_mousewheel)  # Windows
+        canvas.bind("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))  # Linux
+        canvas.bind("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))  # Linux
+        
+        # Variables for selection
+        selection_rect = None
+        start_x, start_y = 0, 0
+        end_x, end_y = 0, 0
+
+    # Update displayed image based on slice index
+        if has_z_dimension and has_c_dimension:  # (C, Z, Y, X)
+            display_img=Image.fromarray(self.raw_image_data[0, 0, :, :])
+        elif has_c_dimension and self.raw_image_data.shape[2] in [2, 3, 4]:  # (c, Y, X)
+            display_img=Image.fromarray(self.raw_image_data[:, :, :])
+        elif has_z_dimension:  # (Z, Y, X)
+            display_img=Image.fromarray(self.raw_image_data[0, :, :])
+        else:  # Default to first slice
+            display_img=Image.fromarray(self.raw_image_data[0, 0, :, :])
+            
+        # # Get the image data for the current frame
+        # current_idx = self.current_image_index
+        # if len(self.original_shape) == 2:  # Single 2D image
+        #     img_array = self.raw_image_data
+        # elif len(self.original_shape) == 3:  # (Z, Y, X) or (Y, X, C)
+        #     if self.original_shape[2] in [3, 4]:  # Likely (Y, X, C)
+        #         img_array = self.raw_image_data
+        #     else:  # Likely (Z, Y, X)
+        #         img_array = self.raw_image_data[current_idx % self.original_shape[0]]
+        # elif len(self.original_shape) == 4:  # (Z, C, Y, X) or similar
+        #     img_array = self.raw_image_data[current_idx % self.original_shape[0]]
+        # else:
+        #     img_array = self.raw_image_data
+        
+        # # Convert to PIL image for display
+        # if isinstance(img_array, np.ndarray):
+        #     # Normalize for display
+        #     if img_array.dtype != np.uint8:
+        #         img_array = ((img_array - img_array.min()) / (img_array.max() - img_array.min()) * 255).astype(np.uint8)
+            
+        #     # Handle different channel configurations
+        #     if len(img_array.shape) == 2:  # Grayscale
+        #         display_img = Image.fromarray(img_array)
+        #     elif len(img_array.shape) == 3:  # RGB or similar
+        #         if img_array.shape[2] == 1:
+        #             display_img = Image.fromarray(img_array[:,:,0])
+        #         elif img_array.shape[2] == 3:
+        #             display_img = Image.fromarray(img_array)
+        #         elif img_array.shape[2] == 4:
+        #             display_img = Image.fromarray(img_array)
+        #         else:
+        #             # Take first channel for display
+        #             display_img = Image.fromarray(img_array[:,:,0])
+        #     else:
+        #         display_img = Image.fromarray(np.zeros((100, 100), dtype=np.uint8))
+        # else:
+        #     display_img = Image.fromarray(np.zeros((100, 100), dtype=np.uint8))
+        
+        # Store original image dimensions
+        original_width, original_height = display_img.size
+        
+        # # Function to display image with current zoom
+        # def update_zoom(event=None):
+        #     zoom = zoom_var.get()
+        #     zoom_label.config(text=f"{zoom:.1f}x")
+            
+        #     # Calculate new dimensions
+        #     new_width = int(original_width * zoom)
+        #     new_height = int(original_height * zoom)
+            
+        #     # Resize image for display
+        #     if zoom == 1.0:
+        #         resized_img = display_img
+        #     else:
+        #         resized_img = display_img.resize((new_width, new_height), Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS)
+            
+        #     # Convert to PhotoImage
+        #     photo_img = ImageTk.PhotoImage(resized_img)
+            
+        #     # Update canvas
+        #     canvas.delete("all")
+        #     canvas.config(scrollregion=(0, 0, new_width, new_height))
+        #     canvas.create_image(0, 0, anchor=tk.NW, image=photo_img)
+        #     canvas.image = photo_img  # Keep reference
+            
+        #     # Redraw selection rectangle if it exists
+        #     if start_x != end_x and start_y != end_y:
+        #         # Scale the coordinates to match zoom
+        #         scaled_start_x = int(start_x * zoom)
+        #         scaled_start_y = int(start_y * zoom)
+        #         scaled_end_x = int(end_x * zoom)
+        #         scaled_end_y = int(end_y * zoom)
+                
+        #         canvas.create_rectangle(
+        #             scaled_start_x, scaled_start_y, 
+        #             scaled_end_x, scaled_end_y,
+        #             outline="red", width=2, tags="selection"
+        #         )
+        # # Then define on_mousewheel function
+        # def on_mousewheel(event):
+        #     if event.state & 0x4:  # Check if Ctrl key is pressed
+        #         # Zoom with Ctrl+Wheel
+        #         if event.delta > 0:
+        #             new_zoom = min(5.0, zoom_var.get() + 0.1)
+        #         else:
+        #             new_zoom = max(0.1, zoom_var.get() - 0.1)
+        #         zoom_var.set(new_zoom)
+        #         update_zoom()
+        #     else:
+        #         # Scroll vertically
+        #         canvas.yview_scroll(-1 * (event.delta // 120), "units")
+        # Initial display
+        update_zoom()
+        
+        # Selection coordinates display
+        coords_var = tk.StringVar(value="Selection: None")
+        ttk.Label(frame, textvariable=coords_var).pack(pady=5)
+        
+        # Functions for rectangle selection
+        def start_selection(event):
+            nonlocal selection_rect, start_x, start_y
+            
+            # Convert canvas coordinates to original image coordinates
+            zoom = zoom_var.get()
+            canvas_x = canvas.canvasx(event.x)
+            canvas_y = canvas.canvasy(event.y)
+            
+            # Convert to original image coordinates
+            start_x = int(canvas_x / zoom)
+            start_y = int(canvas_y / zoom)
+            
+            # Create new rectangle
+            selection_rect = canvas.create_rectangle(
+                canvas_x, canvas_y, canvas_x, canvas_y,
+                outline="red", width=2, tags="selection"
+            )
+        
+        def update_selection(event):
+            nonlocal end_x, end_y
+            
+            if selection_rect:
+                # Convert canvas coordinates to original image coordinates
+                zoom = zoom_var.get()
+                canvas_x = canvas.canvasx(event.x)
+                canvas_y = canvas.canvasy(event.y)
+                
+                # Convert to original image coordinates
+                end_x = int(canvas_x / zoom)
+                end_y = int(canvas_y / zoom)
+                
+                # Update rectangle
+                canvas.coords(selection_rect, 
+                             start_x * zoom, start_y * zoom, 
+                             canvas_x, canvas_y)
+                
+                # Update coordinates display
+                width = abs(end_x - start_x)
+                height = abs(end_y - start_y)
+                coords_var.set(f"Selection: ({min(start_x, end_x)}, {min(start_y, end_y)}) to "
+                              f"({max(start_x, end_x)}, {max(start_y, end_y)}), Size: {width}x{height}")
+        
+        def end_selection(event):
+            nonlocal end_x, end_y
+            
+            if selection_rect:
+                # Convert canvas coordinates to original image coordinates
+                zoom = zoom_var.get()
+                canvas_x = canvas.canvasx(event.x)
+                canvas_y = canvas.canvasy(event.y)
+                
+                # Convert to original image coordinates
+                end_x = int(canvas_x / zoom)
+                end_y = int(canvas_y / zoom)
+                
+                # Ensure coordinates are within image bounds
+                end_x = max(0, min(end_x, original_width))
+                end_y = max(0, min(end_y, original_height))
+                
+                # Update rectangle
+                canvas.coords(selection_rect, 
+                             start_x * zoom, start_y * zoom, 
+                             end_x * zoom, end_y * zoom)
+        
+        # Bind events
+        canvas.bind("<ButtonPress-1>", start_selection)
+        canvas.bind("<B1-Motion>", update_selection)
+        canvas.bind("<ButtonRelease-1>", end_selection)
+        
+        # Output file selection
+        file_frame = ttk.LabelFrame(frame, text="Output Directory")
+        file_frame.pack(fill=tk.X, pady=10)
+        
+        file_path_var = tk.StringVar()
+        file_path_entry = ttk.Entry(file_frame, textvariable=file_path_var)
+        file_path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 5), pady=10)
+        
+        def browse_save_dir():
+            directory = filedialog.askdirectory(
+                title="Select Output Directory"
+            )
+            if directory:
+                file_path_var.set(directory)
+        
+        browse_button = ttk.Button(file_frame, text="Browse...", command=browse_save_dir)
+        browse_button.pack(side=tk.RIGHT, padx=(5, 10), pady=10)
+        
+        # Buttons
+        button_frame = ttk.Frame(frame)
+        button_frame.pack(fill=tk.X, pady=10)
+        
+        def save_cropped_data():
+            try:
+                # Validate crop parameters
+                x_start = min(start_x, end_x)
+                y_start = min(start_y, end_y)
+                x_end = max(start_x, end_x)
+                y_end = max(start_y, end_y)
+                
+                # Validate selection
+                if x_start == x_end or y_start == y_end:
+                    messagebox.showerror("Error", "Please draw a selection rectangle first")
+                    return
+                
+                slices = []
+                
+                # Handle different data shapes
+                if len(self.original_shape) == 2:  # (Y, X)
+                    slices = [
+                        slice(y_start, y_end + 1),
+                        slice(x_start, x_end + 1)
+                    ]
+                elif len(self.original_shape) == 3:  # (Z, Y, X) or (Y, X, C)
+                    if self.original_shape[2] in [2, 3, 4]:  # (Y, X, C)
+                        slices = [
+                            slice(y_start, y_end + 1),
+                            slice(x_start, x_end + 1),
+                            slice(None)
+                        ]
+                    else:  # (Z, Y, X)
+                        z_start = int(z_start_var.get())
+                        z_end = int(z_end_var.get())
+                        
+                        if z_start < 0 or z_end >= self.original_shape[0] or z_start > z_end:
+                            messagebox.showerror("Error", f"Invalid Z range")
+                            return
+                        
+                        slices = [
+                            slice(z_start, z_end + 1),
+                            slice(y_start, y_end + 1),
+                            slice(x_start, x_end + 1)
+                        ]
+                elif len(self.original_shape) == 4:  # (C, Z, Y, X)
+                    try:
+                        c_start = int(c_start_var.get())
+                        c_end = int(c_end_var.get())
+                        z_start = int(z_start_var.get())
+                        z_end = int(z_end_var.get())
+                        
+                        if c_start < 0 or c_end >= self.original_shape[0] or c_start > c_end:
+                            messagebox.showerror("Error", f"Invalid C range")
+                            return
+                        if z_start < 0 or z_end >= self.original_shape[1] or z_start > z_end:
+                            messagebox.showerror("Error", f"Invalid Z range")
+                            return
+                        
+                        slices = [
+                            slice(c_start, c_end + 1),
+                            slice(z_start, z_end + 1),
+                            slice(y_start, y_end + 1),
+                            slice(x_start, x_end + 1)
+                        ]
+                    except (ValueError, IndexError):
+                        messagebox.showerror("Error", "Invalid dimension values")
+                        return
+                
+                # Get output directory
+                output_path = file_path_var.get().strip()
+                if not output_path:
+                    messagebox.showerror("Error", "Please specify an output directory")
+                    return
+                
+                # Create progress window
+                progress_window = tk.Toplevel(dialog)
+                progress_window.title("Saving Data")
+                progress_window.geometry("300x150")
+                progress_window.transient(dialog)
+                progress_window.grab_set()
+                
+                progress_label = ttk.Label(progress_window, text="Cropping and saving data...")
+                progress_label.pack(pady=20)
+                
+                progress_bar = ttk.Progressbar(progress_window, orient="horizontal", length=250, mode="indeterminate")
+                progress_bar.pack(pady=10)
+                progress_bar.start()
+                
+                # Update UI
+                progress_window.update()
+                
+                # Crop the data
+                cropped_data = self.raw_image_data[tuple(slices)]
+                
+                # Save the data
+                self.save_3d_data(cropped_data, output_path)
+                
+                # Close progress window
+                progress_window.destroy()
+                
+                # Close dialog
+                dialog.destroy()
+                
+                # Show success message
+                messagebox.showinfo("Success", f"Cropped data saved to {output_path}")
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save cropped data: {str(e)}")
+        
+        save_button = ttk.Button(button_frame, text="Save Cropped Data", command=save_cropped_data)
+        save_button.pack(side=tk.LEFT, padx=5)
+        
+        cancel_button = ttk.Button(button_frame, text="Cancel", command=dialog.destroy)
+        cancel_button.pack(side=tk.RIGHT, padx=5)
+        
+        # Center dialog
+        dialog.update_idletasks()
+        width = dialog.winfo_width()
+        height = dialog.winfo_height()
+        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (height // 2)
+        dialog.geometry(f'{width}x{height}+{x}+{y}')
+    
+    def save_3d_data(self, data, output_path):
+        """Save 3D data in the specified format (nd2 or oib)"""
+
+        try:
+            import imageio
+            # For nd2, we'll use a different approach since direct writing may not be available
+            # Convert to TIFF stack as an alternative that's widely supported
+            import tifffile
+            # from skimage.external import tifffile as tif
+            
+            # # Change extension to .tif if nd2 writing isn't supported
+            # if output_path.endswith('.nd2'):
+            #     output_path = output_path[:-4] + '.tif'
+            #     messagebox.showwarning("Format Note", 
+            #         "ND2 writing not directly supported. Saving as multi-page TIFF instead, which can be loaded by most microscopy software.")
+            
+            # Save as multi-page TIFF
+            # print('shape of tiff data', data.shape)
+            # if len(data.shape) >= 3:
+            #     # Reshape data to ensure it's in the right format
+            #     if len(data.shape) == 5:  # (T, C, Z, Y, X)
+            #         data = data.transpose(0, 2, 1, 3, 4)  # (T, Z, C, Y, X)
+            #     elif len(data.shape) == 4:  # Could be (T, C, Y, X) or (C, Z, Y, X)
+            #         # Assume it's (T/Z, C, Y, X) and reorder to (T/Z, C, Y, X)
+            #         pass
+            #     elif len(data.shape) == 3:  # (Z, Y, X)
+            #         # Add channel dimension: (Z, 1, Y, X)
+            #         data = data[:, np.newaxis, :, :]
+            
+            # tifffile.imwrite(output_path, data[0, :, :, :])
+            # imageio.mimwrite(output_path, data[0, :, :, :], format='tiff')
+            # tif.imsave(output_path, data[0, :, :, :], bigtiff=True)
+            # alpha = 0.5  # Change to control contribution
+            # blended_data = (alpha * data[0, :, :, :] + (1 - alpha) * data[1, :, :, :])
+            # tifffile.imwrite(output_path, data)
+
+            # os.makedirs('tiffs_tifffile', exist_ok=True)
+
+            for i in range(data.shape[1]):
+
+                img1_norm = data[0, i, :, :]/np.max(data[0, i, :, :])
+                img2_norm = data[1, i, :, :]/np.max(data[1, i, :, :])
+                # Create RGB image with zeros (black background)
+                rgb_image = np.zeros((data.shape[2], data.shape[3], 3), dtype=np.uint8)
+
+                # Set red channel (img1) - any non-zero value becomes full red
+                rgb_image[:, :, 0]=img1_norm*255  # Red channel
+
+                # Set green channel (img2) - any non-zero value becomes full green
+                rgb_image[:, :, 1]=  img2_norm*255 # Green channel
+
+
+
+                # Create empty blue channel
+                blue = np.zeros_like(img1_norm, dtype=np.uint8)
+                rgb_image[:, :, 2]=blue
+
+                # Stack channels into RGB image
+                # rgb = np.stack((img1*255, img2*255, blue*255), axis=-1)
+
+
+
+                # tifffile.imwrite(f'{output_path}/_slice_{i}.tif', rgb_image)
+                imageio.imwrite(f'{output_path}/_slice_{i}.png', rgb_image)
+
+
+                # Write the images to a multi-page TIFF file
+            # with tifffile.TiffWriter(output_path) as tif:
+            #     # for image in image_data:
+            #     tif.write(data)
+                
+
+                
+        except Exception as e:
+            raise Exception(f"Failed to save 3D data: {str(e)}")
 
 if __name__ == "__main__":
     root = tk.Tk()

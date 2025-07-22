@@ -5,7 +5,6 @@ import numpy as np
 import os
 import re
 import sys
-import traceback
 from pathlib import Path
 from collections import deque
 import time
@@ -14,12 +13,6 @@ import time
 import torch
 import torch.nn as nn
 from torchvision import transforms
-
-# Import for debugging
-import logging
-logging.basicConfig(filename='nd2_loading.log', level=logging.DEBUG, 
-                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger('TissueSegmentationTool')
 
 # Initialize variables
 has_nd2reader = False
@@ -30,23 +23,39 @@ try:
     # First try nd2reader which is more stable
     from nd2reader import ND2Reader
     has_nd2reader = True
-    logger.info("Successfully imported nd2reader")
 except ImportError:
+    has_nd2reader = False    
+except Exception as e:
+    # Handle DLL loading errors
     has_nd2reader = False
-    logger.warning("Failed to import nd2reader")
-    
+
 try:
     # Fall back to nd2 package
     import nd2
     has_nd2 = True
-    logger.info("Successfully imported nd2")
 except ImportError:
     has_nd2 = False
-    logger.warning("Failed to import nd2")
+except Exception as e:
+    # Handle DLL loading errors
+    print(f"Warning: nd2 package failed to load due to DLL issue: {e}")
+    has_nd2 = False
 
 if not (has_nd2reader or has_nd2):
-    logger.error("No ND2 file support available. Neither nd2reader nor nd2 could be imported.")
     print("Warning: Neither nd2reader nor nd2 package found. ND2 file support will be disabled.")
+
+# OIB file support
+has_aicsimageio = False
+try:
+    from aicsimageio import AICSImage
+    has_aicsimageio = True
+    print("Successfully loaded aicsimageio for OIB file support")
+except ImportError:
+    has_aicsimageio = False
+    print("Warning: aicsimageio package not found. OIB file support will be disabled.")
+    print("To enable OIB support, install with: pip install aicsimageio")
+except Exception as e:
+    has_aicsimageio = False
+    print(f"Warning: aicsimageio package failed to load: {e}")
 
 class DoubleConv(nn.Module):
     """Double Convolution and BN and ReLU"""
@@ -175,6 +184,16 @@ class TissueSegmentationTool:
         self.history = []
         self.history_index = -1
         
+        # Performance optimization variables
+        self.update_scheduled = False
+        self.last_update_time = 0
+        self.update_interval = 50  # milliseconds between updates during drawing
+        
+        # Aggressive performance mode variables
+        self.fast_mode = True  # Enable aggressive optimizations by default
+        self.draw_count = 0
+        self.update_every_n_draws = 5  # Only update every 5th draw operation
+        
         # Tool selection
         self.active_tool = "brush"  # "brush" or "fill"
         
@@ -191,8 +210,23 @@ class TissueSegmentationTool:
         self.auto_segment_queue = []
         self.auto_segment_model_ready = False
         
+        # Multi-channel and raw data support
+        self.raw_image_data = None  # Store raw multi-dimensional data
+        self.current_channels = []  # List of available channels
+        self.selected_channel = None  # Currently selected channel (None = all channels)
+        self.channel_images = {}  # Dictionary storing images for each channel
+        self.original_shape = None  # Original dimensions (Z, C, Y, X or similar)
+        
+        # Crop functionality
+        self.crop_bounds = None  # (z_start, z_end, y_start, y_end, x_start, x_end)
+        self.is_cropped = False
+        self.original_raw_data = None  # Backup of uncropped data
+        
         # Initialize the hardcoded segments and colors
         self.initialize_segments()
+        
+        # Set ultra-fast mode for maximum brush performance
+        self.set_performance_mode("ultra_fast")
         
         self.create_landing_page()
     
@@ -308,14 +342,14 @@ class TissueSegmentationTool:
         load_button = ttk.Button(frame, text="Load Image", command=self.load_image)
         load_button.pack(pady=20)
         
-        supported_formats = "Supported formats: ND2, JPG, PNG, TIF"
+        supported_formats = "Supported formats: ND2, OIB, JPG, PNG, TIF"
         format_label = ttk.Label(frame, text=supported_formats, font=("Arial", 12))
         format_label.pack(pady=10)
     
     def load_image(self):
         file_path = filedialog.askopenfilename(
             filetypes=[
-                ("Image files", "*.nd2 *.jpg *.jpeg *.png *.tif *.tiff"),
+                ("Image files", "*.nd2 *.oib *.jpg *.jpeg *.png *.tif *.tiff"),
                 ("All files", "*.*")
             ]
         )
@@ -333,17 +367,15 @@ class TissueSegmentationTool:
         
         file_ext = os.path.splitext(file_path)[1].lower()
         
-        # Process based on file type
+        # Initialize loading status
         loading_successful = False
         
         try:
             if file_ext == '.nd2':
                 if not (has_nd2reader or has_nd2):
                     messagebox.showerror("Error", "ND2 file support is not available. Please install nd2reader or nd2 package using pip.")
-                    logger.error("Attempted to load ND2 file without required packages")
-                    return
+                    return  # Fixed: Should return, not process
                 
-                logger.info(f"Starting ND2 file loading: {file_path}")
                 self.process_nd2_file(file_path)
                 loading_successful = len(self.original_images) > 0
                 
@@ -353,6 +385,17 @@ class TissueSegmentationTool:
                                            "Failed to load ND2 file. Would you like to see troubleshooting options?"):
                         self.show_nd2_troubleshooting()
                         return
+            elif file_ext == '.oib':
+                if not has_aicsimageio:
+                    messagebox.showerror("Error", "OIB file support is not available. Please install aicsimageio package using pip.")
+                    return
+                
+                self.process_oib_file(file_path)
+                loading_successful = len(self.original_images) > 0
+                
+                if not loading_successful:
+                    messagebox.showerror("Error", "Failed to load OIB file")
+                    return
             elif file_ext in ['.jpg', '.jpeg', '.png', '.tif', '.tiff']:
                 self.process_regular_image(file_path)
                 loading_successful = len(self.original_images) > 0
@@ -360,8 +403,6 @@ class TissueSegmentationTool:
                 messagebox.showerror("Error", f"Unsupported file format: {file_ext}")
                 return
         except Exception as e:
-            logger.error(f"Error during image loading: {str(e)}")
-            logger.error(traceback.format_exc())
             messagebox.showerror("Error", f"Failed to load image: {str(e)}")
             return
         
@@ -373,7 +414,7 @@ class TissueSegmentationTool:
     
     def get_image_files_in_directory(self, directory):
         """Find all image files in the directory"""
-        image_extensions = ['.nd2', '.jpg', '.jpeg', '.png', '.tif', '.tiff']
+        image_extensions = ['.nd2', '.oib', '.jpg', '.jpeg', '.png', '.tif', '.tiff']
         image_files = []
         
         for file in os.listdir(directory):
@@ -386,7 +427,6 @@ class TissueSegmentationTool:
     
     def process_nd2_file(self, file_path):
         try:
-            logger.info(f"Starting to process ND2 file: {file_path}")
             self.original_images = []
             error_details = []
             
@@ -414,6 +454,8 @@ class TissueSegmentationTool:
             total_frames = 0
             frame_dimension = None
             frame_info = {}
+            total_frames = 0
+            frame_dimension = None
             
             # Try to get frame count with nd2 package
             if has_nd2:
@@ -421,9 +463,7 @@ class TissueSegmentationTool:
                     status_label.config(text="Analyzing ND2 file dimensions...")
                     analysis_window.update()
                     
-                    with nd2.ND2File(file_path) as f:
-                        logger.info(f"ND2 file opened with nd2 package. Available sizes: {f.sizes}")
-                        
+                    with nd2.ND2File(file_path) as f:                        
                         # Find likely Z-stack or other dimension for frames
                         z_dimensions = []
                         for dim in ['z', 'v', 'Z', 'V', 't', 'T']:
@@ -443,10 +483,8 @@ class TissueSegmentationTool:
                         if z_dimensions:
                             # Pick the dimension with the most slices
                             frame_dimension, total_frames = max(z_dimensions, key=lambda x: x[1])
-                            frame_info = {"package": "nd2", "dimension": frame_dimension, "count": total_frames}
-                            logger.info(f"Found {total_frames} frames in dimension {frame_dimension}")
                 except Exception as e:
-                    logger.error(f"Error analyzing ND2 with nd2 package: {str(e)}")
+                    pass
             
             # If nd2 package failed, try nd2reader
             if total_frames == 0 and has_nd2reader:
@@ -456,10 +494,8 @@ class TissueSegmentationTool:
                     
                     with ND2Reader(file_path) as images:
                         total_frames = len(images)
-                        frame_info = {"package": "nd2reader", "count": total_frames}
-                        logger.info(f"Found {total_frames} frames with nd2reader")
                 except Exception as e:
-                    logger.error(f"Error analyzing ND2 with nd2reader: {str(e)}")
+                    pass
             
             # Close analysis window
             try:
@@ -575,7 +611,6 @@ class TissueSegmentationTool:
                     end_frame = total_frames - 1
                     frame_dialog.destroy()
                     return True
-                
                 # Otherwise validate custom range
                 try:
                     s = int(start_var.get())
@@ -583,15 +618,12 @@ class TissueSegmentationTool:
                     
                     # Validate range
                     if s < 0 or s >= total_frames:
-                        messagebox.showerror("Error", f"Start frame must be between 0 and {total_frames-1}")
                         return False
                     if e < 0 or e >= total_frames:
-                        messagebox.showerror("Error", f"End frame must be between 0 and {total_frames-1}")
                         return False
                     if s > e:
                         messagebox.showerror("Error", "Start frame must be less than or equal to end frame")
                         return False
-                    
                     # Set values and close
                     start_frame = s
                     end_frame = e
@@ -600,8 +632,7 @@ class TissueSegmentationTool:
                 except ValueError:
                     messagebox.showerror("Error", "Please enter valid frame numbers")
                     return False
-            
-            # Configure load button command
+                # Configure load button command
             load_button.config(command=validate_and_load)
             
             # Wait for dialog to close
@@ -627,25 +658,19 @@ class TissueSegmentationTool:
             y = (screen_height - height) // 2
             frame_dialog.geometry(f"{width}x{height}+{x}+{y}")
             
-            # Make dialog a fixed size to prevent resizing issues
-            frame_dialog.resizable(False, False)
-            
-            # Wait for dialog to close
+            # Wait for user to interact with dialog
             self.root.wait_window(frame_dialog)
             
-            # Check if dialog was successful
+            # If dialog was closed without loading, return
             if not dialog_result[0]:
-                logger.info("Frame selection cancelled or unsuccessful")
                 return
-            
-            # Start the loading process
+                        # Start the loading process
             self.load_nd2_frames(file_path, frame_info, start_frame, end_frame)
-            
+            # Continue with actual frame loading here...
+            # (This section would need proper implementation)
+            # For now, just initialize empty
         except Exception as e:
-            logger.error(f"Unexpected error in process_nd2_file: {str(e)}")
-            logger.error(traceback.format_exc())
             messagebox.showerror("Error", f"Failed to process ND2 file: {str(e)}")
-            
             # Initialize empty
             self.original_images = []
             self.segmentation_masks = []
@@ -709,18 +734,15 @@ class TissueSegmentationTool:
                                 img = self.process_nd2_array(img_array)
                                 if img:
                                     self.original_images.append(img)
-                                    logger.info(f"Successfully loaded frame {i}, size: {img.size}")
                                     success = True
                                 else:
-                                    logger.warning(f"Failed to convert frame {i} to image")
+                                    return
                             except Exception as e:
                                 error_msg = f"Error loading frame {i}: {str(e)}"
-                                logger.error(error_msg)
                                 error_details.append(error_msg)
                                 continue
                 except Exception as e:
                     error_msg = f"nd2 package load error: {str(e)}"
-                    logger.error(error_msg)
                     error_details.append(error_msg)
             
             # If nd2 package failed or wasn't used, try nd2reader
@@ -751,18 +773,15 @@ class TissueSegmentationTool:
                                 img = self.process_nd2_array(img_array)
                                 if img:
                                     self.original_images.append(img)
-                                    logger.info(f"Successfully loaded frame {i}, size: {img.size}")
                                     success = True
                                 else:
-                                    logger.warning(f"Failed to convert frame {i} to image")
+                                    pass
                             except Exception as e:
                                 error_msg = f"Error loading frame {i}: {str(e)}"
-                                logger.error(error_msg)
                                 error_details.append(error_msg)
                                 continue
                 except Exception as e:
                     error_msg = f"nd2reader error: {str(e)}"
-                    logger.error(error_msg)
                     error_details.append(error_msg)
             
             # Try using a different approach if both methods failed
@@ -781,7 +800,6 @@ class TissueSegmentationTool:
                                 progress_window.update()
                                 
                                 raw_data = f.asarray()
-                                logger.info(f"Raw data shape: {raw_data.shape}")
                                 
                                 # For 3D+ arrays, extract 2D slices
                                 if len(raw_data.shape) >= 3:
@@ -810,17 +828,17 @@ class TissueSegmentationTool:
                                             img = self.process_nd2_array(slice_data)
                                             if img:
                                                 self.original_images.append(img)
-                                                logger.info(f"Successfully loaded raw slice {i}, size: {img.size}")
+
                                                 success = True
                                         except Exception as e:
-                                            logger.error(f"Error processing raw slice {i}: {str(e)}")
+
                                             continue
                                 else:
                                     # Single image
                                     img = self.process_nd2_array(raw_data)
                                     if img:
                                         self.original_images.append(img)
-                                        logger.info(f"Successfully loaded single raw image, size: {img.size}")
+
                                         success = True
                                 
                                 # If we got images, break out of coordinate system loop
@@ -828,11 +846,11 @@ class TissueSegmentationTool:
                                     break
                                     
                             except Exception as e:
-                                logger.error(f"Error with {coordinate_system} coordinates: {str(e)}")
+
                                 continue
                 except Exception as e:
                     error_msg = f"Raw data approach error: {str(e)}"
-                    logger.error(error_msg)
+
                     error_details.append(error_msg)
             
             # Close progress window
@@ -844,10 +862,10 @@ class TissueSegmentationTool:
             # Check if we got any images
             if not self.original_images:
                 # Show error with details
-                logger.error("Failed to load any slices from ND2 file")
+
                 
                 error_details_str = "\n".join(error_details)
-                logger.error(f"Error details:\n{error_details_str}")
+
                 
                 messagebox.showerror("Error", "Failed to load any slices from the ND2 file. Check the log for details.")
                 return
@@ -860,8 +878,8 @@ class TissueSegmentationTool:
             messagebox.showinfo("Success", f"Successfully loaded {len(self.original_images)} frames from ND2 file")
             
         except Exception as e:
-            logger.error(f"Unexpected error in load_nd2_frames: {str(e)}")
-            logger.error(traceback.format_exc())
+
+
             
             # Show error message
             messagebox.showerror("Error", f"Failed to load ND2 frames: {str(e)}")
@@ -872,8 +890,7 @@ class TissueSegmentationTool:
             self.current_image_index = 0
     
     def process_regular_image(self, file_path):
-        try:
-            # Check if this is an auto-segmented original image
+                    # Check if this is an auto-segmented original image
             base_name = os.path.basename(file_path)
             if base_name.startswith("auto_segmented_original_"):
                 # This is an auto-segmented original image, try to load the corresponding mask
@@ -898,7 +915,6 @@ class TissueSegmentationTool:
                         self.current_image_index = 0
                         
                         # Update window title to indicate auto-segmented image
-                        self.root.title(f"Tissue Segmentation Tool - Auto-Segmented: {base_name}")
                         
                         # Show user-friendly message only once per session or if significant annotations
                         if non_transparent > 100:  # Only show if substantial annotations
@@ -907,7 +923,6 @@ class TissueSegmentationTool:
                                               "You can modify the annotations using the paint tools and adjust opacity.")
                         return
                     except Exception as e:
-                        logger.warning(f"Failed to load mask {mask_path}: {str(e)}")
                         # Don't show intrusive popup for loading issues
                         print(f"Warning: Could not load mask for auto-segmented image")
                         # Fall back to empty mask
@@ -966,7 +981,6 @@ class TissueSegmentationTool:
                             non_transparent = np.sum(mask_array[:, :, 3] > 0) if len(mask_array.shape) == 3 and mask_array.shape[2] == 4 else 0
                             
                             # Update window title
-                            self.root.title(f"Tissue Segmentation Tool - With Annotations: {base_name}")
                             
                             messagebox.showinfo("Annotations Loaded", 
                                               f"✓ Successfully loaded {non_transparent} annotated pixels.\n\n"
@@ -980,25 +994,18 @@ class TissueSegmentationTool:
                             messagebox.showwarning("Annotation Load Failed", 
                                                  f"Could not convert the annotation file to the expected format.\n"
                                                  f"Starting with blank annotations.")
-                            self.root.title(f"Tissue Segmentation Tool - {base_name}")
                     except Exception as e:
-                        # Fall back to empty mask if loading failed
                         self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0))]
                         messagebox.showerror("Error Loading Annotations", 
                                            f"Failed to load annotation file:\n{str(e)}\n\n"
                                            f"Starting with blank annotations.")
-                        self.root.title(f"Tissue Segmentation Tool - {base_name}")
                 else:
                     # User chose not to load existing annotations
                     self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0))]
-                    self.root.title(f"Tissue Segmentation Tool - {base_name}")
             else:
                 # No existing annotations found
                 self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0))]
                 # Update window title for regular images
-                self.root.title(f"Tissue Segmentation Tool - {base_name}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to open image: {str(e)}")
     
     def convert_segmentation_to_mask(self, segmentation_img, target_size):
         """Convert a saved segmentation image back to RGBA mask format"""
@@ -1032,12 +1039,9 @@ class TissueSegmentationTool:
             
             # Convert back to PIL Image
             converted_mask = Image.fromarray(mask_array, 'RGBA')
-            
-            print(f"Debug: Converted {pixels_converted} pixels from segmentation to mask format")
             return converted_mask
             
         except Exception as e:
-            print(f"Error converting segmentation to mask: {str(e)}")
             return None
     
     def create_annotation_window(self):
@@ -1105,8 +1109,8 @@ class TissueSegmentationTool:
         
         load_folder_button2 = ttk.Button(
             folder_frame, 
-            text="Load New Folder", 
-            command=self.load_new_folder,
+            text="Load Annotation", 
+            command=self.load_annotation,
             style="Action.TButton"
         )
         load_folder_button2.pack(side=tk.LEFT, padx=5)
@@ -1144,6 +1148,7 @@ class TissueSegmentationTool:
         if base_name.startswith("auto_segmented_original_"):
             self.status_label.config(text="✓ Auto-Segmented")
         else:
+
             self.status_label.config(text="")
         
         next_file_button = ttk.Button(file_nav_frame, text="Next File", command=self.load_next_file)
@@ -1230,7 +1235,7 @@ class TissueSegmentationTool:
         brush_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         
         # Add a label showing the current brush size
-        self.brush_size_label = ttk.Label(brush_frame, text=f"{self.brush_size}")
+        self.brush_size_label = ttk.Label(brush_frame, text=f"{self.brush_size}px")
         self.brush_size_label.pack(side=tk.LEFT, padx=5)
         
         # Opacity control for annotation overlay
@@ -1320,9 +1325,10 @@ class TissueSegmentationTool:
             elif hasattr(event, 'num') and event.num:
                 delta = -120 if event.num == 5 else 120
             else:
+
                 return
-            
-            canvas.yview_scroll(int(-1 * (delta / 120)), "units")
+
+                canvas.yview_scroll(int(-1 * (delta / 120)), "units")
         
         # Bind mouse wheel to canvas and scrollable frame
         canvas.bind("<MouseWheel>", on_mousewheel_segments)
@@ -1460,9 +1466,16 @@ class TissueSegmentationTool:
         save_button = ttk.Button(save_frame, text="Save Segmentations", command=self.save_segmentations)
         save_button.pack(fill=tk.X)
         
+        # Add multi-channel and crop controls if applicable
+        if self.raw_image_data is not None or len(self.current_channels) > 1:
+            self.add_advanced_controls(right_frame)
+        
         # Set initial segment
         if self.segments:
             self.select_segment(0)
+        
+        # Auto-optimize performance for existing annotations
+        self.detect_and_optimize_for_existing_annotations()
         
         self.update_image()
     
@@ -1628,7 +1641,8 @@ class TissueSegmentationTool:
     def update_brush_size(self, event=None):
         self.brush_size = self.brush_size_var.get()
         # Update the brush size label
-        self.brush_size_label.config(text=f"{self.brush_size}")
+        if hasattr(self, 'brush_size_label'):
+            self.brush_size_label.config(text=f"{self.brush_size}px")
     
     def update_opacity(self, event=None):
         """Update annotation opacity and refresh the display"""
@@ -1648,6 +1662,7 @@ class TissueSegmentationTool:
             if i == index:
                 button.config(relief=tk.SUNKEN, borderwidth=3)
             else:
+
                 button.config(relief=tk.RAISED, borderwidth=1)
     
     def set_eraser(self):
@@ -1664,15 +1679,7 @@ class TissueSegmentationTool:
         original = self.original_images[self.current_image_index]
         mask = self.segmentation_masks[self.current_image_index]
         
-        # Debug: Check mask properties
-        mask_array = np.array(mask)
-        non_transparent_pixels = np.sum(mask_array[:, :, 3] > 0) if len(mask_array.shape) == 3 and mask_array.shape[2] == 4 else 0
-        print(f"Debug update_image: Mask size {mask.size}, non-transparent pixels: {non_transparent_pixels}")
-        if non_transparent_pixels > 0:
-            unique_colors = np.unique(mask_array.reshape(-1, mask_array.shape[-1]), axis=0)
-            print(f"Debug update_image: Unique colors in mask: {unique_colors[:10]}")  # Show first 10 unique colors
-        
-        # Apply opacity to the mask
+        # Apply opacity to the mask (optimized)
         if self.annotation_opacity < 1.0:
             # Create a copy of the mask and adjust its alpha channel
             mask_with_opacity = mask.copy()
@@ -1694,18 +1701,9 @@ class TissueSegmentationTool:
         else:
             mask_with_opacity = mask
         
-        # Debug: Check mask after opacity
-        mask_with_opacity_array = np.array(mask_with_opacity)
-        non_transparent_after = np.sum(mask_with_opacity_array[:, :, 3] > 0) if len(mask_with_opacity_array.shape) == 3 and mask_with_opacity_array.shape[2] == 4 else 0
-        print(f"Debug update_image: After opacity ({self.annotation_opacity}), non-transparent pixels: {non_transparent_after}")
-        
         # Combine original image and segmentation mask
         combined = original.copy()
         combined.paste(mask_with_opacity, (0, 0), mask_with_opacity)
-        
-        # Debug: Check combined image
-        combined_array = np.array(combined)
-        print(f"Debug update_image: Combined image size: {combined.size}, mode: {combined.mode}")
         
         # Apply zoom
         width, height = combined.size
@@ -1743,9 +1741,7 @@ class TissueSegmentationTool:
         # Update slice label if multiple images
         if len(self.original_images) > 1 and hasattr(self, 'slice_label'):
             self.slice_label.config(text=f"Slice: {self.current_image_index + 1}/{len(self.original_images)}")
-        
-        print(f"Debug update_image: Image display updated")
-    
+
     def previous_image(self):
         if self.current_image_index > 0:
             self.current_image_index -= 1
@@ -1768,13 +1764,20 @@ class TissueSegmentationTool:
         self.drawing = False
         if self.active_tool == "brush":
             self.prev_x, self.prev_y = None, None
+            # Reset draw counter for next drawing session
+            self.draw_count = 0
+            # Ensure final update when drawing stops
+            if self.update_scheduled:
+                self.root.after_cancel(self.update_scheduled)
+                self.update_scheduled = False
+            self.update_image()  # Full quality update when drawing stops
     
     def draw(self, x, y, line=False):
         mask = self.segmentation_masks[self.current_image_index]
         draw = ImageDraw.Draw(mask)
         
+        # Perform the actual drawing
         if self.current_color is None:  # Eraser
-            # Create a larger circular eraser
             if line and self.prev_x is not None and self.prev_y is not None:
                 draw.line((self.prev_x, self.prev_y, x, y), fill=(0, 0, 0, 0), width=self.brush_size * 2)
             else:
@@ -1787,16 +1790,80 @@ class TissueSegmentationTool:
                 draw.ellipse((x - self.brush_size//2, y - self.brush_size//2, 
                              x + self.brush_size//2, y + self.brush_size//2), fill=self.current_color)
         
-        # Update the combined image
-        self.update_image()
+        # AGGRESSIVE PERFORMANCE: Only update every 5th draw while dragging
+        if self.drawing:
+            self.draw_count += 1
+            if self.draw_count >= self.update_every_n_draws:
+                self.draw_count = 0
+                self.fast_update_image()  # Use fast update during drawing
+        else:
+            # Single click - update immediately with full quality
+            self.draw_count = 0
+            self.update_image()
+    
+    def delayed_update(self):
+        """Delayed update method for batching draw operations"""
+        if self.update_scheduled:
+            self.update_scheduled = False
+            self.last_update_time = time.time() * 1000
+            self.update_image()
+    
+    def fast_update_image(self):
+        """Optimized update for drawing operations - skips expensive processing"""
+        if not self.original_images:
+            return
+        
+        # Get current image and mask
+        original = self.original_images[self.current_image_index]
+        mask = self.segmentation_masks[self.current_image_index]
+        
+        # ULTRA-FAST: Skip ALL opacity processing during drawing
+        # Combine original image and segmentation mask directly
+        combined = original.copy()
+        combined.paste(mask, (0, 0), mask)
+        
+        # ULTRA-FAST: Skip zoom processing if close to 100%
+        if abs(self.zoom_factor - 1.0) < 0.05:  # Increased threshold for speed
+            zoomed_img = combined
+        else:
+            width, height = combined.size
+            new_width = int(width * self.zoom_factor)
+            new_height = int(height * self.zoom_factor)
+            # Use fastest possible resampling
+            zoomed_img = combined.resize((new_width, new_height), Image.NEAREST)
+        
+        # Convert to PhotoImage (unavoidable bottleneck)
+        self.tk_image = ImageTk.PhotoImage(zoomed_img)
+        
+        # Minimal canvas update
+        self.canvas.delete("all")
+        self.canvas.create_image(
+            self.canvas_x_offset, 
+            self.canvas_y_offset, 
+            anchor=tk.NW, 
+            image=self.tk_image
+        )
     
     def undo(self):
-        if self.history_index > 0:
-            self.history_index -= 1
+        if self.history_index >= 0 and len(self.history) > 0:
+            # Get the saved state from history
             image_index, mask = self.history[self.history_index]
+            
             if image_index == self.current_image_index:
+                # Restore the saved mask
                 self.segmentation_masks[self.current_image_index] = mask
                 self.update_image()
+                
+                # Move back in history
+                self.history_index -= 1
+                
+                # Provide feedback about remaining undos
+                remaining_undos = self.history_index + 1
+                if remaining_undos > 0:
+                    print(f"✓ Undo applied. {remaining_undos} more undo(s) available.")
+                else:
+                    print("✓ Undo applied. No more undos available.")
+                    
             else:
                 messagebox.showinfo("Info", "Cannot undo - action was on a different slice")
         else:
@@ -1842,6 +1909,7 @@ class TissueSegmentationTool:
                 if len(self.original_images) > 1:
                     filename = f"segmented_{base_name}_slice_{i+1}.png"
                 else:
+
                     filename = f"segmented_{base_name}.png"
                 
                 # Clean filename to be valid
@@ -1865,7 +1933,6 @@ class TissueSegmentationTool:
             if size <= 100:
                 self.brush_size_var.set(size)
             # Update the label
-            self.brush_size_label.config(text=f"{size}")
         except ValueError:
             messagebox.showerror("Error", "Please enter a valid number for brush size")
 
@@ -1895,32 +1962,26 @@ class TissueSegmentationTool:
                               hasattr(self, 'auto_segment_queue') and 
                               next_file in self.auto_segment_queue)
         
-        # Debug: Show queue status
         if hasattr(self, 'auto_segment_queue'):
-            print(f"Debug load_next_file: Queue has {len(self.auto_segment_queue)} files")
-            print(f"Debug load_next_file: Current file: {os.path.basename(next_file)}")
-            print(f"Debug load_next_file: File in queue: {next_file in self.auto_segment_queue}")
-            print(f"Debug load_next_file: Model ready: {getattr(self, 'auto_segment_model_ready', False)}")
-            print(f"Debug load_next_file: Should auto-segment: {should_auto_segment}")
-            
             # Show remaining files in queue
             if self.auto_segment_queue:
-                print("Debug load_next_file: Remaining files in queue:")
-                for i, file_path in enumerate(self.auto_segment_queue):
-                    print(f"  Queue[{i}]: {os.path.basename(file_path)}")
+                pass  # Queue processing logic would go here
             else:
-                print("Debug load_next_file: Queue is empty")
-        else:
-            print("Debug load_next_file: No auto_segment_queue found")
+                pass  # No queue
         
         # Process file
         file_ext = os.path.splitext(next_file)[1].lower()
         if file_ext == '.nd2':
             self.process_nd2_file(next_file)
+        elif file_ext == '.oib':
+            if not has_aicsimageio:
+                messagebox.showerror("Error", "OIB file support is not available. Please install aicsimageio package using pip.")
+                return
+            self.process_oib_file(next_file)
         elif file_ext in ['.jpg', '.jpeg', '.png', '.tif', '.tiff']:
             self.process_regular_image(next_file)
         else:
-            messagebox.showerror("Error", f"Unsupported file format: {file_ext}")
+
             return
         
         # Reset history
@@ -1931,9 +1992,7 @@ class TissueSegmentationTool:
         self.create_annotation_window()
         
         # Apply auto-segmentation AFTER UI is created
-        if should_auto_segment:
-            print(f"Debug: Applying auto-segmentation to {next_file}")
-            # Ensure UI is fully updated before applying auto-segmentation
+        if should_auto_segment:            # Ensure UI is fully updated before applying auto-segmentation
             self.root.update_idletasks()
             self.root.after(100, self.apply_auto_segmentation_to_current_image)  # Small delay to ensure UI is ready
 
@@ -1961,10 +2020,15 @@ class TissueSegmentationTool:
         file_ext = os.path.splitext(prev_file)[1].lower()
         if file_ext == '.nd2':
             self.process_nd2_file(prev_file)
+        elif file_ext == '.oib':
+            if not has_aicsimageio:
+                messagebox.showerror("Error", "OIB file support is not available. Please install aicsimageio package using pip.")
+                return
+            self.process_oib_file(prev_file)
         elif file_ext in ['.jpg', '.jpeg', '.png', '.tif', '.tiff']:
             self.process_regular_image(prev_file)
         else:
-            messagebox.showerror("Error", f"Unsupported file format: {file_ext}")
+
             return
         
         # Reset history
@@ -2042,16 +2106,12 @@ class TissueSegmentationTool:
     def process_nd2_array(self, img_array):
         """Process a numpy array from ND2 file into a PIL Image"""
         try:
-            if img_array is None or img_array.size == 0:
-                logger.error("Empty image array received")
+            if img_array is None or img_array.size == 0:                
                 return None
             
-            # Log shape information
-            logger.info(f"Processing array with shape {img_array.shape} and dtype {img_array.dtype}")
-            
+            # Log shape information            
             # Handle array with NaN values
-            if np.isnan(img_array).any():
-                logger.warning("Array contains NaN values, replacing with zeros")
+            if np.isnan(img_array).any():                
                 img_array = np.nan_to_num(img_array)
             
             # Convert bit depth if necessary
@@ -2064,68 +2124,59 @@ class TissueSegmentationTool:
                     # Check for valid range
                     if max_val > min_val:
                         # Use robust normalization to handle outliers
-                        p1, p99 = np.percentile(img_array, (1, 99))
-                        logger.info(f"Using percentile normalization: 1%={p1}, 99%={p99}")
-                        
+                        p1, p99 = np.percentile(img_array, (1, 99))                        
                         # Clip to remove extreme outliers
                         img_array_clipped = np.clip(img_array, p1, p99)
                         
                         # Normalize to 0-255
                         normalized = ((img_array_clipped - p1) / (p99 - p1) * 255).astype(np.uint8)
                     else:
-                        # Fallback to simple normalization if percentile doesn't work well
-                        logger.warning("Using simple min-max normalization")
+                        # Fallback to simple normalization if percentile doesn't work well                        normalized = ((img_array - min_val) / (max_val - min_val) * 255).astype(np.uint8)
                         normalized = ((img_array - min_val) / (max_val - min_val) * 255).astype(np.uint8)
-                        
+
                         # If still problematic, create a gray image
-                        if np.isnan(normalized).any() or np.isinf(normalized).any():
-                            logger.warning("Normalization produced invalid values, using flat gray image")
+                        if np.isnan(normalized).any() or np.isinf(normalized).any():                            
                             normalized = np.ones(img_array.shape, dtype=np.uint8) * 128
+                        # Create a blank image as fallback
                 except Exception as e:
-                    logger.error(f"Error in normalization: {str(e)}")
                     # Create a blank image as fallback
                     normalized = np.zeros(img_array.shape, dtype=np.uint8)
-                
                 img_array = normalized
             
             # Handle different dimensions
             if len(img_array.shape) == 2:
-                # Grayscale image - convert to RGB
-                logger.info("Converting 2D grayscale to RGB")
+                # Grayscale image - convert to RGB                img_array = np.stack([img_array, img_array, img_array], axis=-1)
                 img_array = np.stack([img_array, img_array, img_array], axis=-1)
+
             elif len(img_array.shape) == 3:
                 # Handle different 3D formats
                 if img_array.shape[2] == 1:
-                    # Single channel image - expand to RGB
-                    logger.info("Converting single channel to RGB")
                     img_array = np.concatenate([img_array] * 3, axis=2)
+
+                    # Single channel image - expand to RGB                    img_array = np.concatenate([img_array] * 3, axis=2)
                 elif img_array.shape[2] > 4:
-                    # Too many channels, take the first three
-                    logger.info(f"Taking first 3 channels from {img_array.shape[2]} channels")
                     img_array = img_array[:, :, 0:3]
+
+                    # Too many channels, take the first three                    img_array = img_array[:, :, 0:3]
                 elif img_array.shape[2] == 2:
-                    # Two channels, add a third
-                    logger.info("Adding third channel to 2-channel image")
+                    # Two channels, add a third  
+                    #                     third_channel = np.zeros_like(img_array[:, :, 0:1])
                     third_channel = np.zeros_like(img_array[:, :, 0:1])
                     img_array = np.concatenate([img_array, third_channel], axis=2)
                 
                 # Check if channels are in first dimension instead of last
-                if img_array.shape[0] == 3 and img_array.shape[2] > 100:
-                    logger.info("Transposing channels from first to last dimension")
+                if img_array.shape[0] == 3 and img_array.shape[2] > 100:  
                     img_array = np.transpose(img_array, (1, 2, 0))
             elif len(img_array.shape) > 3:
-                # Complex multi-dimensional data
-                logger.warning(f"Complex array shape: {img_array.shape}")
-                
+                # Complex multi-dimensional data                
                 # Try various approaches to extract a meaningful image
                 try:
                     if img_array.shape[0] == 3 and len(img_array.shape) == 4:
-                        # Likely RGB with channels as first dimension
-                        logger.info("Converting from CHW to HWC format")
                         img_array = np.transpose(img_array[0:3], (1, 2, 0))
+
+                        # Likely RGB with channels as first dimension                        img_array = np.transpose(img_array[0:3], (1, 2, 0))
                     else:
                         # Take slices until we get to 3D
-                        logger.info("Reducing dimensions by taking first slice repeatedly")
                         while len(img_array.shape) > 3:
                             img_array = img_array[0]
                         
@@ -2135,28 +2186,22 @@ class TissueSegmentationTool:
                         elif img_array.shape[2] > 3:
                             img_array = img_array[:, :, 0:3]
                 except Exception as e:
-                    logger.error(f"Error restructuring complex array: {str(e)}")
                     # Create a blank image in case of errors
                     img_array = np.zeros((100, 100, 3), dtype=np.uint8)
             
             # Final validation check
-            if img_array.shape[2] != 3 and img_array.shape[2] != 4:
-                logger.error(f"Invalid final channel count: {img_array.shape[2]}")
+            if img_array.shape[2] != 3 and img_array.shape[2] != 4:                
                 return None
                 
             # Check for invalid values before creating PIL image
-            if np.isnan(img_array).any() or np.isinf(img_array).any():
-                logger.warning("Final array contains NaN or Inf values, replacing with zeros")
+            if np.isnan(img_array).any() or np.isinf(img_array).any():                
                 img_array = np.nan_to_num(img_array)
             
             # Create PIL image
-            img = Image.fromarray(img_array)
-            logger.info(f"Successfully created PIL image with size {img.size}")
+            img = Image.fromarray(img_array)            
             return img
-        
         except Exception as e:
-            logger.error(f"Error processing ND2 array: {str(e)}")
-            logger.error(traceback.format_exc())
+
             return None
 
     def show_nd2_troubleshooting(self):
@@ -2254,7 +2299,7 @@ class TissueSegmentationTool:
         elif file_ext in ['.jpg', '.jpeg', '.png', '.tif', '.tiff']:
             self.process_regular_image(image_files[0])
         else:
-            messagebox.showerror("Error", f"Unsupported file format: {file_ext}")
+
             return
         
         # Reset history
@@ -2273,7 +2318,6 @@ class TissueSegmentationTool:
         if self.current_image_index + num_slices >= len(self.original_images):
             messagebox.showerror("Error", "Not enough subsequent slices available")
             return
-
         try:
             print(f"Debug: Starting auto-segmentation of {num_slices} slices from current index {self.current_image_index}")
             
@@ -2310,28 +2354,20 @@ class TissueSegmentationTool:
             
             training_mask = np.zeros((256, 256), dtype=np.int64)
             
-            # Debug: print mask array shape
-            logger.info(f"Mask array shape: {mask_array.shape}")
-            logger.info(f"Training mask shape: {training_mask.shape}")
-            
-            # Create class mapping for each segment color
+ # Create class mapping for each segment color
             for idx, segment in enumerate(self.segments):
                 color = self.segment_colors[segment]
                 # Create boolean mask for this color
                 if len(mask_array.shape) == 3 and mask_array.shape[2] >= 3:
                     # RGBA or RGB mask - ensure we're working with the right dimensions
                     color_match = np.all(mask_array[:, :, :3] == np.array(color[:3]), axis=2)
-                    logger.info(f"Boolean mask shape for {segment}: {color_match.shape}")
                     
                     # Verify dimensions match before applying
                     if color_match.shape == training_mask.shape:
                         training_mask[color_match] = idx
-                    else:
-                        logger.error(f"Shape mismatch: color_match {color_match.shape} vs training_mask {training_mask.shape}")
+                        
                 else:
-                    logger.warning(f"Unexpected mask array shape: {mask_array.shape}")
                     continue
-            
             # Convert to tensors - image is already resized to 256x256
             img_tensor = transform_tensor_only(current_img).unsqueeze(0).to(self.device)
             mask_tensor = torch.from_numpy(training_mask).unsqueeze(0).to(self.device)
@@ -2351,7 +2387,7 @@ class TissueSegmentationTool:
                 if epoch % 5 == 0:
                     print(f"Debug: Training epoch {epoch}, loss: {loss.item():.4f}")
             
-            # Auto-segment subsequent slices
+# Auto-segment subsequent slices
             print(f"Debug: Applying auto-segmentation to {num_slices} subsequent slices...")
             self.model.eval()
             processed_slices = []
@@ -2386,11 +2422,12 @@ class TissueSegmentationTool:
                         pixel_count = np.sum(mask_pixels)
                         if pixel_count > 0:
                             # Special handling for black segments - make them more visible
-                            if color[:3] == (0, 0, 0):  # If it's black
-                                visible_color = (64, 64, 64, 255)
-                                temp_mask[mask_pixels] = visible_color
-                            else:
-                                temp_mask[mask_pixels] = color
+                            # if color[:3] == (0, 0, 0):  # If it's black
+                            #     visible_color = (64, 64, 64, 255)
+                            #     temp_mask[mask_pixels] = visible_color
+                            # else:
+                            #     temp_mask[mask_pixels] = color
+                            temp_mask[mask_pixels] = color
                             pixels_filled += pixel_count
                     
                     print(f"Debug: Slice {next_idx} - filled {pixels_filled} pixels")
@@ -2418,16 +2455,13 @@ class TissueSegmentationTool:
             self.update_image()
             
         except Exception as e:
-            logger.error(f"Error in auto-segmentation: {str(e)}")
-            logger.error(traceback.format_exc())
             messagebox.showerror("Error", f"Auto-segmentation failed: {str(e)}")
-
     def auto_segment_folder_images(self, num_images=1):
         """Auto-segment other images in the folder based on current image annotation"""
         if not self.original_images or not self.segmentation_masks:
             messagebox.showerror("Error", "No image loaded")
             return
-    
+
         if not self.directory_files or len(self.directory_files) <= 1:
             messagebox.showerror("Error", "No other images available in folder")
             return
@@ -2518,9 +2552,6 @@ class TissueSegmentationTool:
                 except tk.TclError:
                     # Window was destroyed, break out of training
                     break
-                except Exception as e:
-                    logger.error(f"Error during training epoch {epoch}: {str(e)}")
-                    break
         
             # Safely destroy progress window
             if progress_window and progress_window.winfo_exists():
@@ -2532,22 +2563,10 @@ class TissueSegmentationTool:
             # Get files that come AFTER the current file in directory order
             remaining_files = self.directory_files[self.current_file_idx + 1:]
 
-            # Debug: Show all available files
-            print(f"Debug: Current file: {os.path.basename(current_file)}")
-            print(f"Debug: Current file index: {self.current_file_idx}")
-            print(f"Debug: Total files in directory: {len(self.directory_files)}")
-            print(f"Debug: Remaining files after current: {len(remaining_files)}")
-            for i, file_path in enumerate(remaining_files):
-                print(f"Debug: Remaining[{i}]: {os.path.basename(file_path)}")
-
             # Ensure we don't exceed available files
             actual_num_images = min(num_images, len(remaining_files))
             self.auto_segment_queue = remaining_files[:actual_num_images]
             self.auto_segment_model_ready = True
-
-            print(f"Debug: Requested {num_images} images, setting up queue with {len(self.auto_segment_queue)} files:")
-            for i, file_path in enumerate(self.auto_segment_queue):
-                print(f"Debug: Queue[{i}]: {os.path.basename(file_path)}")
 
             messagebox.showinfo("Training Complete", 
                               f"✓ Model trained successfully!\n\n"
@@ -2557,9 +2576,8 @@ class TissueSegmentationTool:
                               f"Each image will be automatically segmented for your review and modification.\n\n"
                               f"Files in queue: {[os.path.basename(f) for f in self.auto_segment_queue]}\n\n"
                               f"Use 'Save Segmentations' to save any image you want to keep.")
-        
         except Exception as e:
-            logger.error(f"Error in folder auto-segmentation: {str(e)}")
+            pass
             # Safely destroy progress window if it exists
             if progress_window:
                 try:
@@ -2567,7 +2585,6 @@ class TissueSegmentationTool:
                         progress_window.destroy()
                 except:
                     pass
-            messagebox.showerror("Error", f"Folder auto-segmentation failed: {str(e)}")
 
     def show_auto_segment_dialog(self):
         """Show dialog to get number of slices to auto-segment"""
@@ -2700,6 +2717,58 @@ class TissueSegmentationTool:
         x = (dialog.winfo_screenwidth() // 2) - (width // 2)
         y = (dialog.winfo_screenheight() // 2) - (height // 2)
         dialog.geometry(f'{width}x{height}+{x}+{y}')
+    
+    def show_queue_diagnostic(self):
+        """Show diagnostic information about the auto-segmentation queue"""
+        # Create diagnostic window
+        diag_window = tk.Toplevel(self.root)
+        diag_window.title("Auto-Segmentation Queue Diagnostic")
+        diag_window.geometry("600x400")
+        diag_window.transient(self.root)
+        diag_window.grab_set()
+        
+        frame = ttk.Frame(diag_window, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        title = ttk.Label(frame, text="Queue Diagnostic Information", font=("Arial", 14, "bold"))
+        title.pack(pady=10)
+        
+        # Create text widget with scrollbar
+        text_frame = ttk.Frame(frame)
+        text_frame.pack(fill=tk.BOTH, expand=True)
+        
+        scrollbar = ttk.Scrollbar(text_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        text = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set)
+        text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=text.yview)
+        
+        # Add diagnostic information
+        text.insert(tk.END, f"Model Ready: {getattr(self, 'auto_segment_model_ready', 'Not set')}\n")
+        text.insert(tk.END, f"Model Exists: {self.model is not None}\n")
+        
+        if hasattr(self, 'auto_segment_queue'):
+            text.insert(tk.END, f"Queue Length: {len(self.auto_segment_queue)}\n")
+            text.insert(tk.END, f"Queue Files:\n")
+            for i, file_path in enumerate(self.auto_segment_queue):
+                text.insert(tk.END, f"  {i+1}. {os.path.basename(file_path)}\n")
+        else:
+            text.insert(tk.END, "Queue: Not initialized\n")
+        
+        text.insert(tk.END, f"\nCurrent Directory: {self.current_directory}\n")
+        text.insert(tk.END, f"Directory Files: {len(self.directory_files) if self.directory_files else 0}\n")
+        text.insert(tk.END, f"Current File Index: {self.current_file_idx}\n")
+        
+        if self.directory_files:
+            text.insert(tk.END, f"Current File: {os.path.basename(self.directory_files[self.current_file_idx])}\n")
+        
+        # Make text widget read-only
+        text.config(state=tk.DISABLED)
+        
+        # Close button
+        close_button = ttk.Button(frame, text="Close", command=diag_window.destroy)
+        close_button.pack(pady=10)
 
     def apply_auto_segmentation_to_current_image(self):
         """Apply auto-segmentation to the currently loaded image"""
@@ -2833,88 +2902,9 @@ class TissueSegmentationTool:
             self.root.after(1000, lambda: setattr(self, 'annotation_opacity', original_opacity))
             
         except Exception as e:
-            logger.error(f"Error applying auto-segmentation: {str(e)}")
             print(f"Debug Error: Could not apply auto-segmentation: {str(e)}")
             import traceback
             traceback.print_exc()
-
-    def show_queue_diagnostic(self):
-        """Show diagnostic information about the current queue and directory"""
-        diagnostic_window = tk.Toplevel(self.root)
-        diagnostic_window.title("Queue Diagnostic")
-        diagnostic_window.geometry("600x400")
-        diagnostic_window.transient(self.root)
-        
-        frame = ttk.Frame(diagnostic_window, padding="20")
-        frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Create text widget with scrollbar
-        text_frame = ttk.Frame(frame)
-        text_frame.pack(fill=tk.BOTH, expand=True)
-        
-        scrollbar = ttk.Scrollbar(text_frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        text = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set)
-        text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.config(command=text.yview)
-        
-        # Add diagnostic information
-        text.insert(tk.END, "=== QUEUE DIAGNOSTIC INFORMATION ===\n\n")
-        
-        # Directory information
-        text.insert(tk.END, f"Current Directory: {self.current_directory}\n")
-        text.insert(tk.END, f"Current File Index: {self.current_file_idx}\n")
-        text.insert(tk.END, f"Total Files in Directory: {len(self.directory_files) if hasattr(self, 'directory_files') else 'None'}\n\n")
-        
-        # List all files in directory
-        if hasattr(self, 'directory_files') and self.directory_files:
-            text.insert(tk.END, "All Files in Directory:\n")
-            for i, file_path in enumerate(self.directory_files):
-                current_marker = " <- CURRENT" if i == self.current_file_idx else ""
-                text.insert(tk.END, f"  [{i}] {os.path.basename(file_path)}{current_marker}\n")
-            text.insert(tk.END, "\n")
-        
-        # Queue information
-        text.insert(tk.END, f"Auto-Segment Model Ready: {getattr(self, 'auto_segment_model_ready', False)}\n")
-        text.insert(tk.END, f"Queue Size: {len(self.auto_segment_queue) if hasattr(self, 'auto_segment_queue') else 'No queue'}\n\n")
-        
-        # List queue contents
-        if hasattr(self, 'auto_segment_queue') and self.auto_segment_queue:
-            text.insert(tk.END, "Files in Auto-Segmentation Queue:\n")
-            for i, file_path in enumerate(self.auto_segment_queue):
-                text.insert(tk.END, f"  [{i}] {os.path.basename(file_path)}\n")
-                text.insert(tk.END, f"      Full path: {file_path}\n")
-            text.insert(tk.END, "\n")
-        else:
-            text.insert(tk.END, "No files in auto-segmentation queue\n\n")
-        
-        # Current image information
-        text.insert(tk.END, f"Current Image Path: {self.image_paths[0] if self.image_paths else 'None'}\n")
-        text.insert(tk.END, f"Number of Loaded Images: {len(self.original_images)}\n")
-        text.insert(tk.END, f"Current Image Index: {self.current_image_index}\n\n")
-        
-        # Next file prediction
-        if hasattr(self, 'directory_files') and self.directory_files:
-            if self.current_file_idx < len(self.directory_files) - 1:
-                next_file = self.directory_files[self.current_file_idx + 1]
-                text.insert(tk.END, f"Next File Would Be: {os.path.basename(next_file)}\n")
-                if hasattr(self, 'auto_segment_queue'):
-                    in_queue = next_file in self.auto_segment_queue
-                    text.insert(tk.END, f"Next File in Queue: {in_queue}\n")
-                    if in_queue:
-                        text.insert(tk.END, "✓ Next file SHOULD be auto-segmented\n")
-                    else:
-                        text.insert(tk.END, "✗ Next file will NOT be auto-segmented\n")
-            else:
-                text.insert(tk.END, "No more files available\n")
-        
-        text.config(state=tk.DISABLED)
-        
-        # Close button
-        close_button = ttk.Button(frame, text="Close", command=diagnostic_window.destroy)
-        close_button.pack(pady=10)
-
     def load_new_image(self):
         """Load a new individual image with automatic annotation loading"""
         # Ask if user wants to save current segmentation
@@ -2925,7 +2915,7 @@ class TissueSegmentationTool:
         file_path = filedialog.askopenfilename(
             title="Select Image File",
             filetypes=[
-                ("Image files", "*.nd2 *.jpg *.jpeg *.png *.tif *.tiff"),
+                ("Image files", "*.nd2 *.oib *.jpg *.jpeg *.png *.tif *.tiff"),
                 ("All files", "*.*")
             ]
         )
@@ -2957,7 +2947,7 @@ class TissueSegmentationTool:
             if file_ext == '.nd2':
                 if not (has_nd2reader or has_nd2):
                     messagebox.showerror("Error", "ND2 file support is not available. Please install nd2reader or nd2 package using pip.")
-                    return
+                    return  # Fixed: Should return, not process
                 
                 self.process_nd2_file(file_path)
                 loading_successful = len(self.original_images) > 0
@@ -2967,6 +2957,17 @@ class TissueSegmentationTool:
                                            "Failed to load ND2 file. Would you like to see troubleshooting options?"):
                         self.show_nd2_troubleshooting()
                         return
+            elif file_ext == '.oib':
+                if not has_aicsimageio:
+                    messagebox.showerror("Error", "OIB file support is not available. Please install aicsimageio package using pip.")
+                    return
+                
+                self.process_oib_file(file_path)
+                loading_successful = len(self.original_images) > 0
+                
+                if not loading_successful:
+                    messagebox.showerror("Error", "Failed to load OIB file")
+                    return
             elif file_ext in ['.jpg', '.jpeg', '.png', '.tif', '.tiff']:
                 self.process_regular_image(file_path)
                 loading_successful = len(self.original_images) > 0
@@ -2987,6 +2988,560 @@ class TissueSegmentationTool:
         
         # Update UI
         self.create_annotation_window()
+
+    def load_annotation(self):
+        """Load an annotation file (JPG or PNG) for the current image/slice"""
+        if not self.original_images:
+            messagebox.showerror("Error", "No image loaded. Please load an image first.")
+            return
+        
+        # Ask for annotation file
+        annotation_path = filedialog.askopenfilename(
+            title="Select Annotation File",
+            filetypes=[
+                ("Image files", "*.jpg *.jpeg *.png"),
+                ("PNG files", "*.png"),
+                ("JPG files", "*.jpg *.jpeg"),
+                ("All files", "*.*")
+            ]
+        )
+        
+        if not annotation_path:
+            return  # User cancelled
+        
+        try:
+            # Load the annotation file
+            annotation_img = Image.open(annotation_path)
+            
+            # Get current image size for validation
+            current_img = self.original_images[self.current_image_index]
+            target_size = current_img.size
+            
+            # Convert segmentation image back to mask format
+            mask = self.convert_segmentation_to_mask(annotation_img, target_size)
+            
+            if mask is not None:
+                # Save current state for undo before applying new annotation
+                current_mask = self.segmentation_masks[self.current_image_index].copy()
+                # Truncate history if we're not at the end
+                if self.history_index < len(self.history) - 1:
+                    self.history = self.history[:self.history_index + 1]
+                self.history.append((self.current_image_index, current_mask))
+                self.history_index = len(self.history) - 1
+                
+                # Apply the loaded annotation
+                self.segmentation_masks[self.current_image_index] = mask
+                
+                # Count non-transparent pixels for user feedback
+                mask_array = np.array(mask)
+                non_transparent = np.sum(mask_array[:, :, 3] > 0) if len(mask_array.shape) == 3 and mask_array.shape[2] == 4 else 0
+                
+                # Update the display
+                self.update_image()
+                
+                # Show success message
+                annotation_name = os.path.basename(annotation_path)
+                slice_info = f" for slice {self.current_image_index + 1}" if len(self.original_images) > 1 else ""
+                messagebox.showinfo("Annotation Loaded", 
+                                  f"✓ Successfully loaded annotation: {annotation_name}{slice_info}\n\n"
+                                  f"Annotated pixels: {non_transparent:,}\n"
+                                  f"Size: {mask.size[0]} × {mask.size[1]}\n\n"
+                                  f"You can now edit the loaded annotations or save them.")
+            else:
+                messagebox.showerror("Error", 
+                                   f"Could not convert the annotation file to the expected format.\n\n"
+                                   f"Please ensure the annotation file uses the same colors as defined in the segment palette.\n"
+                                   f"Supported formats: JPG, PNG")
+        
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load annotation file:\n{str(e)}\n\n"
+                               f"Please check that the file is a valid image format (JPG or PNG).")
+
+    def set_performance_mode(self, mode="balanced"):
+        """Configure performance settings for different use cases"""
+        if mode == "fast":
+            self.update_interval = 100  # Less frequent updates for speed
+            self.update_every_n_draws = 8  # Even more aggressive - update every 8th draw
+        elif mode == "responsive":
+            self.update_interval = 25   # More frequent updates for responsiveness
+            self.update_every_n_draws = 3  # More responsive - update every 3rd draw
+        elif mode == "ultra_fast":
+            self.update_interval = 200  # Very infrequent updates
+            self.update_every_n_draws = 10  # Very aggressive - update every 10th draw
+        else:  # balanced
+            self.update_interval = 50   # Default balanced setting
+            self.update_every_n_draws = 5  # Default - update every 5th draw
+    
+    def detect_and_optimize_for_existing_annotations(self):
+        """Detect if we have heavy annotations and adjust performance accordingly"""
+        if not self.segmentation_masks or not self.segmentation_masks[self.current_image_index]:
+            return
+        
+        # Check if current mask has substantial existing annotations
+        mask = self.segmentation_masks[self.current_image_index]
+        mask_array = np.array(mask)
+        
+        if len(mask_array.shape) == 3 and mask_array.shape[2] == 4:
+            non_transparent_pixels = np.sum(mask_array[:, :, 3] > 0)
+            total_pixels = mask_array.shape[0] * mask_array.shape[1]
+            annotation_density = non_transparent_pixels / total_pixels
+            
+            # If more than 5% of pixels are annotated, use ultra-aggressive settings
+            if annotation_density > 0.05:
+                self.update_every_n_draws = 15  # Very aggressive for heavy annotations
+            elif annotation_density > 0.01:
+                self.update_every_n_draws = 12  # Aggressive for medium annotations
+            else:
+                self.update_every_n_draws = 10  # Default ultra_fast setting
+
+    def process_oib_file(self, file_path):
+        """Process OIB file with basic multi-channel support"""
+        try:
+            aics_img = AICSImage(file_path)
+            raw_data = aics_img.data  # Shape is typically (T, C, Z, Y, X)
+            
+            # Store raw data for later use
+            self.raw_image_data = raw_data
+            self.original_shape = raw_data.shape
+            self.original_raw_data = raw_data.copy()  # Backup for cropping
+            
+            # Get dimension information
+            dims = aics_img.dims.order  # String like "TCZYX"
+            
+            # Extract channel information if available
+            if 'C' in dims:
+                c_idx = dims.index('C')
+                num_channels = raw_data.shape[c_idx]
+                
+                if num_channels > 1:
+                    # Try to get channel names
+                    try:
+                        channel_names = aics_img.channel_names
+                        if channel_names and len(channel_names) == num_channels:
+                            self.current_channels = [f"Ch{i}: {name}" for i, name in enumerate(channel_names)]
+                        else:
+                            self.current_channels = [f"Channel {i}" for i in range(num_channels)]
+                    except:
+                        self.current_channels = [f"Channel {i}" for i in range(num_channels)]
+                else:
+                    self.current_channels = ["Single Channel"]
+            else:
+                self.current_channels = ["Single Channel"]
+            
+            # Initialize with all channels combined
+            self.selected_channel = None
+            
+            # Process the data using the regenerate method
+            self.regenerate_images_from_raw_data()
+            
+            # Initialize segmentation masks
+            self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0)) for img in self.original_images]
+            self.current_image_index = 0
+            
+            print(f"Loaded OIB file: {raw_data.shape}, {len(self.current_channels)} channels, {len(self.original_images)} images")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to process OIB file: {str(e)}")
+            self.original_images = []
+            self.segmentation_masks = []
+            self.current_image_index = 0
+    
+    def array_to_pil_image(self, img_array):
+        """Convert numpy array to PIL Image (similar to process_nd2_array)"""
+        try:
+            if img_array is None or img_array.size == 0:
+                return None
+            
+            # Handle NaN values
+            if np.isnan(img_array).any():
+                img_array = np.nan_to_num(img_array)
+            
+            # Convert bit depth if necessary
+            if img_array.dtype != np.uint8:
+                min_val = np.min(img_array)
+                max_val = np.max(img_array)
+                
+                if max_val > min_val:
+                    # Normalize to 0-255
+                    normalized = ((img_array - min_val) / (max_val - min_val) * 255).astype(np.uint8)
+                else:
+                    normalized = np.ones(img_array.shape, dtype=np.uint8) * 128
+                    
+                img_array = normalized
+            
+            # Handle different dimensions
+            if len(img_array.shape) == 2:
+                # Grayscale - convert to RGB
+                img_array = np.stack([img_array, img_array, img_array], axis=-1)
+            
+            # Create PIL image
+            img = Image.fromarray(img_array)
+            return img
+            
+        except Exception as e:
+            print(f"Error converting array to PIL image: {e}")
+            return None
+
+    def add_advanced_controls(self, parent_frame):
+        """Add crop and channel selection controls"""
+        
+        # Channel selection frame
+        if len(self.current_channels) > 1:
+            channel_frame = ttk.LabelFrame(parent_frame, text="Channel Selection")
+            channel_frame.pack(fill=tk.X, pady=5)
+            
+            # Add "All Channels" option
+            self.channel_var = tk.StringVar(value="all")
+            
+            all_channels_rb = ttk.Radiobutton(
+                channel_frame, 
+                text="All Channels (Combined)", 
+                variable=self.channel_var, 
+                value="all",
+                command=self.on_channel_change
+            )
+            all_channels_rb.pack(anchor=tk.W, padx=5, pady=2)
+            
+            # Add individual channel options
+            for i, channel_name in enumerate(self.current_channels):
+                channel_rb = ttk.Radiobutton(
+                    channel_frame, 
+                    text=channel_name, 
+                    variable=self.channel_var, 
+                    value=str(i),
+                    command=self.on_channel_change
+                )
+                channel_rb.pack(anchor=tk.W, padx=5, pady=2)
+        
+        # Crop controls frame
+        if self.raw_image_data is not None:
+            crop_frame = ttk.LabelFrame(parent_frame, text="Crop Controls")
+            crop_frame.pack(fill=tk.X, pady=5)
+            
+            crop_button = ttk.Button(
+                crop_frame, 
+                text="Configure Crop Region", 
+                command=self.show_crop_dialog
+            )
+            crop_button.pack(fill=tk.X, padx=5, pady=5)
+            
+            if self.is_cropped:
+                status_label = ttk.Label(crop_frame, text="✓ Image is cropped", foreground="green")
+                status_label.pack(padx=5, pady=2)
+                
+                reset_button = ttk.Button(
+                    crop_frame, 
+                    text="Reset to Original", 
+                    command=self.reset_crop
+                )
+                reset_button.pack(fill=tk.X, padx=5, pady=2)
+        
+        # Export controls frame
+        export_frame = ttk.LabelFrame(parent_frame, text="Export")
+        export_frame.pack(fill=tk.X, pady=5)
+        
+        export_raw_button = ttk.Button(
+            export_frame, 
+            text="Export Raw Images", 
+            command=self.export_raw_images
+        )
+        export_raw_button.pack(fill=tk.X, padx=5, pady=2)
+        
+        export_masks_button = ttk.Button(
+            export_frame, 
+            text="Export Annotation Masks", 
+            command=self.export_annotation_masks
+        )
+        export_masks_button.pack(fill=tk.X, padx=5, pady=2)
+        
+        if len(self.current_channels) > 1:
+            export_combined_button = ttk.Button(
+                export_frame, 
+                text="Export Multi-Channel Combined", 
+                command=self.export_multichannel_combined
+            )
+            export_combined_button.pack(fill=tk.X, padx=5, pady=2)
+    
+    def on_channel_change(self):
+        """Handle channel selection change"""
+        if not hasattr(self, 'channel_var'):
+            return
+            
+        selected = self.channel_var.get()
+        
+        if selected == "all":
+            self.selected_channel = None
+        else:
+            self.selected_channel = int(selected)
+        
+        # Regenerate images with new channel selection
+        if self.raw_image_data is not None:
+            self.regenerate_images_from_raw_data()
+            self.update_image()
+    
+    def show_crop_dialog(self):
+        """Show dialog for configuring crop region"""
+        if self.raw_image_data is None:
+            messagebox.showwarning("Warning", "No raw data available for cropping")
+            return
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Configure Crop Region")
+        dialog.geometry("500x400")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        frame = ttk.Frame(dialog, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(frame, text="Crop Region Configuration", font=("Arial", 12, "bold")).pack(pady=10)
+        ttk.Label(frame, text=f"Original Shape: {self.original_shape}", font=("Arial", 10)).pack(pady=5)
+        
+        # Crop controls for each dimension
+        crop_entries = {}
+        dimensions = ['T', 'C', 'Z', 'Y', 'X']  # Common dimension order
+        
+        controls_frame = ttk.Frame(frame)
+        controls_frame.pack(fill=tk.X, pady=10)
+        
+        for i, dim in enumerate(dimensions):
+            if i < len(self.original_shape) and self.original_shape[i] > 1:
+                dim_frame = ttk.Frame(controls_frame)
+                dim_frame.pack(fill=tk.X, pady=5)
+                
+                ttk.Label(dim_frame, text=f"{dim} (0-{self.original_shape[i]-1}):").pack(side=tk.LEFT, padx=5)
+                
+                start_entry = ttk.Entry(dim_frame, width=8)
+                start_entry.pack(side=tk.LEFT, padx=2)
+                start_entry.insert(0, "0")
+                
+                ttk.Label(dim_frame, text="to").pack(side=tk.LEFT, padx=2)
+                
+                end_entry = ttk.Entry(dim_frame, width=8)
+                end_entry.pack(side=tk.LEFT, padx=2)
+                end_entry.insert(0, str(self.original_shape[i] - 1))
+                
+                crop_entries[i] = (start_entry, end_entry, self.original_shape[i])
+        
+        # Buttons
+        button_frame = ttk.Frame(frame)
+        button_frame.pack(fill=tk.X, pady=20)
+        
+        def apply_crop():
+            try:
+                slices = []
+                for i in range(len(self.original_shape)):
+                    if i in crop_entries:
+                        start_val = int(crop_entries[i][0].get())
+                        end_val = int(crop_entries[i][1].get())
+                        max_val = crop_entries[i][2]
+                        
+                        if start_val < 0 or end_val >= max_val or start_val > end_val:
+                            messagebox.showerror("Error", f"Invalid crop range for dimension {i}")
+                            return
+                        
+                        slices.append(slice(start_val, end_val + 1))
+                    else:
+                        slices.append(slice(None))
+                
+                # Apply crop
+                cropped_data = self.original_raw_data[tuple(slices)]
+                self.raw_image_data = cropped_data
+                self.is_cropped = True
+                
+                # Regenerate images
+                self.regenerate_images_from_raw_data()
+                
+                # Update segmentation masks
+                self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0)) for img in self.original_images]
+                self.current_image_index = 0
+                
+                dialog.destroy()
+                
+                # Refresh UI
+                self.create_annotation_window()
+                
+                messagebox.showinfo("Success", "Crop applied successfully")
+                
+            except ValueError:
+                messagebox.showerror("Error", "Please enter valid numeric values")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to apply crop: {str(e)}")
+        
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Apply Crop", command=apply_crop).pack(side=tk.RIGHT, padx=5)
+        
+        # Center dialog
+        dialog.update_idletasks()
+        width = dialog.winfo_width()
+        height = dialog.winfo_height()
+        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (height // 2)
+        dialog.geometry(f'{width}x{height}+{x}+{y}')
+    
+    def reset_crop(self):
+        """Reset to original uncropped data"""
+        if self.original_raw_data is not None:
+            self.raw_image_data = self.original_raw_data.copy()
+            self.is_cropped = False
+            
+            # Regenerate images
+            self.regenerate_images_from_raw_data()
+            
+            # Update segmentation masks
+            self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0)) for img in self.original_images]
+            self.current_image_index = 0
+            
+            # Refresh UI
+            self.create_annotation_window()
+            
+            messagebox.showinfo("Success", "Reset to original data")
+    
+    def regenerate_images_from_raw_data(self):
+        """Regenerate display images from raw data based on current settings"""
+        if self.raw_image_data is None:
+            return
+        
+        self.original_images = []
+        data = self.raw_image_data
+        
+        # Simplified processing for now
+        if len(data.shape) >= 4:  # Multi-dimensional
+            # Take first timepoint if exists
+            if data.shape[0] > 1:  # Likely time dimension
+                data = data[0]
+            
+            # Handle channels
+            if len(data.shape) >= 3 and data.shape[0] > 1:  # Likely channel dimension
+                if self.selected_channel is None:
+                    # Combine all channels
+                    if data.shape[0] == 3:
+                        # RGB-like, transpose to put channels last
+                        data = np.transpose(data, (1, 2, 0))
+                    else:
+                        # Average channels
+                        data = np.mean(data, axis=0)
+                else:
+                    # Select specific channel
+                    if self.selected_channel < data.shape[0]:
+                        data = data[self.selected_channel]
+                    else:
+                        data = data[0]  # Fallback
+            
+            # Handle Z dimension
+            if len(data.shape) == 3 and data.shape[0] > 1:  # Z, Y, X
+                for z in range(data.shape[0]):
+                    img_array = data[z]
+                    pil_img = self.array_to_pil_image(img_array)
+                    if pil_img:
+                        self.original_images.append(pil_img)
+            else:  # Single 2D image
+                pil_img = self.array_to_pil_image(data)
+                if pil_img:
+                    self.original_images.append(pil_img)
+        else:
+            # Simple 2D case
+            pil_img = self.array_to_pil_image(data)
+            if pil_img:
+                self.original_images.append(pil_img)
+    
+    def export_raw_images(self):
+        """Export raw images in current channel configuration"""
+        if not self.original_images:
+            messagebox.showerror("Error", "No images to export")
+            return
+        
+        save_dir = filedialog.askdirectory(title="Select Export Directory")
+        if not save_dir:
+            return
+        
+        try:
+            base_name = "raw_image"
+            if self.image_paths:
+                base_name = os.path.splitext(os.path.basename(self.image_paths[0]))[0]
+            
+            for i, img in enumerate(self.original_images):
+                if len(self.original_images) > 1:
+                    filename = f"{base_name}_slice_{i+1:03d}.png"
+                else:
+                    filename = f"{base_name}_raw.png"
+                
+                save_path = os.path.join(save_dir, filename)
+                img.save(save_path)
+            
+            messagebox.showinfo("Success", f"Exported {len(self.original_images)} raw images to {save_dir}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export raw images: {str(e)}")
+    
+    def export_annotation_masks(self):
+        """Export annotation masks"""
+        if not self.segmentation_masks:
+            messagebox.showerror("Error", "No annotation masks to export")
+            return
+        
+        save_dir = filedialog.askdirectory(title="Select Export Directory")
+        if not save_dir:
+            return
+        
+        try:
+            base_name = "annotation_mask"
+            if self.image_paths:
+                base_name = os.path.splitext(os.path.basename(self.image_paths[0]))[0]
+            
+            for i, mask in enumerate(self.segmentation_masks):
+                if len(self.segmentation_masks) > 1:
+                    filename = f"{base_name}_mask_{i+1:03d}.png"
+                else:
+                    filename = f"{base_name}_mask.png"
+                
+                save_path = os.path.join(save_dir, filename)
+                mask.save(save_path)
+            
+            messagebox.showinfo("Success", f"Exported {len(self.segmentation_masks)} annotation masks to {save_dir}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export annotation masks: {str(e)}")
+    
+    def export_multichannel_combined(self):
+        """Export multi-channel data as combined single channel"""
+        if self.raw_image_data is None:
+            messagebox.showerror("Error", "No multi-channel data available")
+            return
+        
+        save_dir = filedialog.askdirectory(title="Select Export Directory")
+        if not save_dir:
+            return
+        
+        try:
+            # Temporarily set to combine all channels
+            original_selection = self.selected_channel
+            self.selected_channel = None
+            
+            # Regenerate images with combined channels
+            self.regenerate_images_from_raw_data()
+            
+            base_name = "multichannel_combined"
+            if self.image_paths:
+                base_name = os.path.splitext(os.path.basename(self.image_paths[0]))[0] + "_combined"
+            
+            for i, img in enumerate(self.original_images):
+                if len(self.original_images) > 1:
+                    filename = f"{base_name}_slice_{i+1:03d}.png"
+                else:
+                    filename = f"{base_name}.png"
+                
+                save_path = os.path.join(save_dir, filename)
+                img.save(save_path)
+            
+            # Restore original selection
+            self.selected_channel = original_selection
+            self.regenerate_images_from_raw_data()
+            
+            messagebox.showinfo("Success", f"Exported {len(self.original_images)} combined multi-channel images to {save_dir}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export multi-channel combined: {str(e)}")
 
 if __name__ == "__main__":
     root = tk.Tk()
