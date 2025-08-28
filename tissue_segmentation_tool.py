@@ -714,6 +714,7 @@ class TissueSegmentationTool:
                 image_shape = frame_info['shape']
 
     # Store raw data for crop functionality
+                self.file_path=file_path
                 self.raw_image_data = raw_data
                 self.original_shape = image_shape
                 self.original_raw_data = raw_data.copy()
@@ -1182,6 +1183,7 @@ class TissueSegmentationTool:
                 dimension = frame_info['dimension']
                 
                 # Store raw data for crop functionality
+                self.file_path=file_path
                 self.raw_image_data = raw_data
                 self.original_shape = image_shape
                 self.original_raw_data = raw_data.copy()
@@ -4743,7 +4745,6 @@ class TissueSegmentationTool:
         if self.raw_image_data is None:
             messagebox.showwarning("Warning", "No 3D data available for cropping and saving")
             return
-        
         # Create dialog with canvas for rectangle selection
         dialog = tk.Toplevel(self.root)
         dialog.title("Crop and Save 3D Data")
@@ -5322,9 +5323,16 @@ class TissueSegmentationTool:
                 
                 # Get output directory
                 output_path = file_path_var.get().strip()
+                
                 if not output_path:
                     messagebox.showerror("Error", "Please specify an output directory")
                     return
+                
+                
+                file_path= self.file_path
+                file_path = os.path.splitext(os.path.basename(file_path))[0]
+                print('filename', file_path)
+                crop_info=  file_path + '_' + str(x_start) +  '_' + str(x_end) + '_' + str(y_start) +  '_'  + str(y_end)
                 
                 # Create progress window
                 progress_window = tk.Toplevel(dialog)
@@ -5347,7 +5355,7 @@ class TissueSegmentationTool:
                 cropped_data = self.raw_image_data[tuple(slices)]
                 
                 # Save the data
-                self.save_3d_data(cropped_data, output_path)
+                self.save_3d_data(cropped_data, output_path, z_start,  crop_info)
                 
                 # Close progress window
                 progress_window.destroy()
@@ -5375,7 +5383,7 @@ class TissueSegmentationTool:
         y = (dialog.winfo_screenheight() // 2) - (height // 2)
         dialog.geometry(f'{width}x{height}+{x}+{y}')
     
-    def save_3d_data(self, data, output_path):
+    def save_3d_data(self, data, output_path, z_start, crop_info):
         """Save 3D data in the specified format (nd2 or oib)"""
 
         try:
@@ -5413,6 +5421,8 @@ class TissueSegmentationTool:
 
             # os.makedirs('tiffs_tifffile', exist_ok=True)
 
+            print('z start', z_start)
+
             for i in range(data.shape[1]):
 
                 img1_norm = data[0, i, :, :]/np.max(data[0, i, :, :])
@@ -5438,7 +5448,7 @@ class TissueSegmentationTool:
 
 
                 # tifffile.imwrite(f'{output_path}/_slice_{i}.tif', rgb_image)
-                imageio.imwrite(f'{output_path}/_slice_{i}.png', rgb_image)
+                imageio.imwrite(f'{output_path}/{crop_info}_slice_{z_start+i}.png', rgb_image)
 
 
                 # Write the images to a multi-page TIFF file
