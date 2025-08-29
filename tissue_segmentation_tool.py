@@ -361,8 +361,11 @@ class TissueSegmentationTool:
                 self.process_multipagetiff_image(file_path)
                 loading_successful = len(self.original_images) > 0
             elif file_ext in ['.jpg', '.jpeg', '.png']:
+                print('2D jpg images')
                 self.process_regular_image(file_path)
                 loading_successful = len(self.original_images) > 0
+                print('is loading successful', loading_successful)
+
             else:
                 messagebox.showerror("Error", f"Unsupported file format: {file_ext}")
                 return
@@ -1565,8 +1568,7 @@ class TissueSegmentationTool:
             progress_window.update()
             
             error_details = []
-            success = False
-            
+            success = False           
             # Load frames based on selected method
             if frame_info.get("package") == "nd2":
                 try:
@@ -1574,6 +1576,7 @@ class TissueSegmentationTool:
                     progress_window.update()
                     
                     dimension = frame_info.get("dimension")
+
                     
                     with nd2.ND2File(file_path) as f:
                         # Setup progress tracking
@@ -1742,6 +1745,51 @@ class TissueSegmentationTool:
             
             # Show success message
             messagebox.showinfo("Success", f"Successfully loaded {len(self.original_images)} frames from ND2 file")
+            # raw_data = frame_info['raw_data']
+            # raw_data = self.original_images
+            print('shape of raw data only nd2', np.shape(raw_data))
+            self.raw_image_data=raw_data
+            self.original_shape= np.shape(raw_data)
+            self.file_path=file_path
+            print(self.original_shape)
+
+
+            # # Extract frame based on shape
+            #     if len(image_shape) == 2:  # Single 2D image
+            #         # Process as a single 2D image
+            #         img = self.process_nd2_array(raw_data)
+            #         if img:
+            #             self.original_images.append(img)
+            #             success = True
+            #     elif len(image_shape) == 3:  # (Z, Y, X) or (Y, X, C)
+            #         if image_shape[2] in [3, 4]:  # Likely (Y, X, C) - RGB or RGBA image
+            #             img = self.process_nd2_array(raw_data)
+            #             if img:
+            #                 self.original_images.append(img)
+            #                 success = True
+            #         else:  # Likely (Z, Y, X) - multiple grayscale frames
+            #             for i in range(image_shape[0]):
+            #                 img = self.process_nd2_array(raw_data[i])
+            #                 if img:
+            #                     self.original_images.append(img)
+            #                     success = True
+            #     elif len(image_shape) == 4:  # (Z, C, Y, X) or similar
+            #         for i in range(image_shape[0]):
+            #             img = self.process_nd2_array(raw_data[i])
+            #             if img:
+            #                 self.original_images.append(img)
+            #                 success = True
+            #     else:
+            #         # Fallback for unknown dimensions
+            #         img = self.process_nd2_array(raw_data[0] if len(raw_data.shape) > 2 else raw_data)
+            #         if img:
+            #             self.original_images.append(img)
+            #             success = True
+
+
+
+
+            # image_shape = frame_info['shape']
             
         except Exception as e:
 
@@ -1756,56 +1804,170 @@ class TissueSegmentationTool:
             self.current_image_index = 0
     
     def process_regular_image(self, file_path):
-                    # Check if this is an auto-segmented original image
-            base_name = os.path.basename(file_path)
-            if base_name.startswith("auto_segmented_original_"):
-                # This is an auto-segmented original image, try to load the corresponding mask
-                mask_name = base_name.replace("auto_segmented_original_", "auto_segmented_mask_")
-                mask_name = os.path.splitext(mask_name)[0] + ".png"  # Ensure .png extension
-                mask_path = os.path.join(os.path.dirname(file_path), mask_name)
-                
-                # Load original image
-                img = Image.open(file_path).convert('RGB')
-                
-                # Try to load corresponding mask
-                if os.path.exists(mask_path):
-                    try:
-                        mask = Image.open(mask_path).convert('RGBA')
-                        
-                        # Check if mask has any non-transparent pixels
-                        mask_array = np.array(mask)
-                        non_transparent = np.sum(mask_array[:, :, 3] > 0)
-                        
-                        self.original_images = [img]
-                        self.segmentation_masks = [mask]
-                        self.current_image_index = 0
-                        
-                        # Update window title to indicate auto-segmented image
-                        
-                        # Show user-friendly message only once per session or if significant annotations
-                        if non_transparent > 100:  # Only show if substantial annotations
-                            messagebox.showinfo("Auto-Segmented Image Loaded", 
-                                              f"✓ Loaded auto-segmented image with {non_transparent} annotated pixels.\n"
-                                              "You can modify the annotations using the paint tools and adjust opacity.")
-                        return
-                    except Exception as e:
-                        # Don't show intrusive popup for loading issues
-                        print(f"Warning: Could not load mask for auto-segmented image")
-                        # Fall back to empty mask
-                        pass
-                else:
-                    # Don't show intrusive popup for missing mask
-                    print(f"Warning: Mask file missing for auto-segmented image")
+        # Check if this is an auto-segmented original image
+        base_name = os.path.basename(file_path)
+
+        # self.create_annotation_window()
+        if base_name.startswith("auto_segmented_original_"):
+            # This is an auto-segmented original image, try to load the corresponding mask
+            mask_name = base_name.replace("auto_segmented_original_", "auto_segmented_mask_")
+            mask_name = os.path.splitext(mask_name)[0] + ".png"  # Ensure .png extension
+            mask_path = os.path.join(os.path.dirname(file_path), mask_name)
             
-            # Default behavior for regular images or if mask loading failed
+            # Load original image
             img = Image.open(file_path).convert('RGB')
+            
+            # Try to load corresponding mask
+            if os.path.exists(mask_path):
+                try:
+                    mask = Image.open(mask_path).convert('RGBA')
+                    
+                    # Check if mask has any non-transparent pixels
+                    mask_array = np.array(mask)
+                    non_transparent = np.sum(mask_array[:, :, 3] > 0)
+                    
+                    self.original_images = [img]
+                    self.segmentation_masks = [mask]
+                    self.current_image_index = 0
+                    
+                    # Update window title to indicate auto-segmented image
+                    
+                    # Show user-friendly message only once per session or if significant annotations
+                    if non_transparent > 100:  # Only show if substantial annotations
+                        messagebox.showinfo("Auto-Segmented Image Loaded", 
+                                          f"✓ Loaded auto-segmented image with {non_transparent} annotated pixels.\n"
+                                          "You can modify the annotations using the paint tools and adjust opacity.")
+                    return
+                except Exception as e:
+                    # Don't show intrusive popup for loading issues
+                    print(f"Warning: Could not load mask for auto-segmented image")
+                    # Fall back to empty mask
+                    pass
+            else:
+                # Don't show intrusive popup for missing mask
+                print(f"Warning: Mask file missing for auto-segmented image")
+        
+        # Default behavior for regular images or if mask loading failed
+        try:
+            # Open image with PIL first to check format
+            pil_img = Image.open(file_path)
+            print('PIL image mode:', pil_img.mode)
+            
+            # Flag to track if this is a high bit-depth image
+            is_high_bit_depth = False
+            
+            # For 16-bit PNG images (mode 'I' or 'I;16'), use numpy to load and normalize properly
+            if pil_img.mode in ['I', 'I;16', 'L;16', 'F']:
+                print('Loading high bit-depth image with numpy')
+                is_high_bit_depth = True
+                # Use numpy to load the image and preserve bit depth
+                import imageio
+                img_array = imageio.imread(file_path)
+                
+                # Get image info
+                print('Image array shape:', img_array.shape)
+                print('Image array dtype:', img_array.dtype)
+                print('Image min/max values:', np.min(img_array), np.max(img_array))
+                
+                # Initialize contrast adjustment values
+                self.min_percentile = tk.DoubleVar(value=1.0)
+                self.max_percentile = tk.DoubleVar(value=99.0)
+                
+                # Store raw data for later contrast adjustment
+                self.raw_image_data = img_array
+                self.original_shape = img_array.shape
+                self.file_path = file_path
+                
+                # Normalize based on bit depth
+                if img_array.dtype == np.uint16:
+                    # 16-bit normalization
+                    img_array_norm = img_array.astype(np.float32) / 65535.0
+                elif img_array.dtype == np.float32 or img_array.dtype == np.float64:
+                    # Float normalization
+                    min_val = np.min(img_array)
+                    max_val = np.max(img_array)
+                    if max_val > min_val:
+                        img_array_norm = (img_array - min_val) / (max_val - min_val)
+                    else:
+                        img_array_norm = np.zeros_like(img_array, dtype=np.float32)
+                else:
+                    # Default normalization for other types
+                    max_val = np.iinfo(img_array.dtype).max if img_array.dtype.kind in 'ui' else np.max(img_array)
+                    img_array_norm = img_array.astype(np.float32) / max_val
+                
+                # Convert to 8-bit for display
+                img_array_8bit = (img_array_norm * 255).astype(np.uint8)
+                
+                # Convert to RGB if grayscale
+                if len(img_array_8bit.shape) == 2:
+                    img_array_8bit = np.stack([img_array_8bit] * 3, axis=-1)
+                
+                # Create PIL image
+                img = Image.fromarray(img_array_8bit)
+                
+                # Calculate better initial contrast values based on image histogram
+                # This helps with very dark 16-bit images
+                try:
+                    # Calculate histogram
+                    hist, bins = np.histogram(img_array.flatten(), bins=256)
+                    
+                    # Find non-zero percentiles
+                    non_zero_values = img_array[img_array > 0]
+                    if len(non_zero_values) > 0:
+                        p5 = np.percentile(non_zero_values, 5)
+                        p95 = np.percentile(non_zero_values, 95)
+                        
+                        # Set initial percentiles to better reveal content
+                        self.min_percentile.set(0.1)  # Very low to capture dark details
+                        
+                        # If the image is very dark (common in 16-bit microscopy)
+                        if np.mean(img_array) < np.max(img_array) * 0.1:
+                            self.max_percentile.set(90.0)  # Lower max percentile to enhance visibility
+                        else:
+                            self.max_percentile.set(99.0)  # Standard max percentile
+                except Exception as e:
+                    print(f"Error calculating initial contrast: {e}")
+                    # Keep default values
+            else:
+                # For standard 8-bit images, use PIL's convert to RGB
+                img = pil_img.convert('RGB')
+                
+                # Convert to numpy array for processing
+                raw_data = np.array(img)
+                self.raw_image_data = raw_data
+                self.original_shape = raw_data.shape
+                self.file_path = file_path
+            
+            print('Final image shape after conversion:', np.array(img).shape)
+            
             self.original_images = [img]
+            print('Shape of image after convert in regular image:', np.shape(self.original_images))
             self.current_image_index = 0
             
             # Check for existing annotation files
             base_name_no_ext = os.path.splitext(base_name)[0]
             directory = os.path.dirname(file_path)
+
+            # Create segmentation mask
+            self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0))]
+
+            # Create the annotation window first
+            self.create_annotation_window()
             
+            # If high bit-depth, apply contrast enhancement after window is created
+            if is_high_bit_depth and hasattr(self, 'min_percentile') and hasattr(self, 'max_percentile'):
+                self.regenerate_current_image_with_contrast()
+                self.update_image()
+                
+                # Show a tip about using the contrast controls
+                messagebox.showinfo("High Bit-Depth Image Detected", 
+                                  "This image has high bit-depth (16-bit or float).\n\n"
+                                  "Use the Contrast Adjustment sliders in the right panel to improve visibility.\n"
+                                  "• Min threshold: Adjust dark areas\n"
+                                  "• Max threshold: Adjust bright areas")
+            
+            total_channels = 1
+
             # Look for segmentation files with common naming patterns
             possible_annotation_files = [
                 os.path.join(directory, f"segmented_{base_name_no_ext}.png"),
@@ -1865,13 +2027,9 @@ class TissueSegmentationTool:
                         messagebox.showerror("Error Loading Annotations", 
                                            f"Failed to load annotation file:\n{str(e)}\n\n"
                                            f"Starting with blank annotations.")
-                else:
-                    # User chose not to load existing annotations
-                    self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0))]
-            else:
-                # No existing annotations found
-                self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0))]
-                # Update window title for regular images
+        except Exception as e:
+            print(f"Error in process_regular_image: {e}")
+            raise e
     
     def convert_segmentation_to_mask(self, segmentation_img, target_size):
         """Convert a saved segmentation image back to RGBA mask format"""
@@ -1911,6 +2069,8 @@ class TissueSegmentationTool:
             return None
     
     def create_annotation_window(self):
+
+        print('annotattion window created with crop')
         # Clear existing widgets
         for widget in self.root.winfo_children():
             widget.destroy()
@@ -2021,6 +2181,7 @@ class TissueSegmentationTool:
         next_file_button.pack(side=tk.RIGHT, padx=5)
         
         # Slice navigation for multi-slice images
+        print('length of original image here', len(self.original_images))
         if len(self.original_images) > 1:
             slice_nav_frame = ttk.Frame(nav_frame)
             slice_nav_frame.pack(side=tk.TOP, fill=tk.X, pady=5)
@@ -2307,7 +2468,9 @@ class TissueSegmentationTool:
         save_button.pack(fill=tk.X)
         
         # Add multi-channel and crop controls if applicable
-        if self.raw_image_data is not None or len(self.current_channels) > 1:
+        # if self.raw_image_data is not None or len(self.current_channels) > 1:
+        print('raw image datas shape', np.shape(self.raw_image_data))
+        if self.raw_image_data is not None:
             self.add_advanced_controls(right_frame)
         
         # Set initial segment
@@ -2723,7 +2886,21 @@ class TissueSegmentationTool:
         # Get base name from the original file
         base_name = os.path.splitext(os.path.basename(self.image_paths[0]))[0]
         
+        # Ask if user wants to save high bit-depth originals if applicable
+        save_high_bit_depth = False
+        if hasattr(self, 'raw_image_data') and self.raw_image_data is not None:
+            if self.raw_image_data.dtype in [np.uint16, np.float32, np.float64]:
+                save_high_bit_depth = messagebox.askyesno(
+                    "High Bit-Depth Detected",
+                    "The original image has high bit-depth (16-bit or float). "
+                    "Would you like to preserve this when saving the original image?\n\n"
+                    "Note: This will save as TIFF format instead of PNG for originals."
+                )
+        
         try:
+            # Create directory if it doesn't exist
+            os.makedirs(save_dir, exist_ok=True)
+            
             # Save each segmentation (one per original image)
             for i, mask in enumerate(self.segmentation_masks):
                 # Create a new RGB image with black background
@@ -2743,51 +2920,57 @@ class TissueSegmentationTool:
                 # Convert back to PIL Image
                 segmented_img = Image.fromarray(segmented_data)
                 
-                # Create filename
+                # Create filenames
                 if len(self.original_images) > 1:
-                    filename = f"segmented_{base_name}_slice_{i+1}.png"
-                else:
-
-                    filename = f"segmented_{base_name}.png"
-                
-                # Clean filename to be valid
-                filename = re.sub(r'[\\/*?:"<>|]', '_', filename)
-                
-                # Save the image
-                save_path = os.path.join(save_dir, filename)
-                segmented_img.save(save_path)
-
-
-                            # Create filenames
-                if len(self.original_images) > 1:
-                    seg_filename = f"segmented_{base_name}_slice_{i+1}.png"
-                    orig_filename = f"original_{base_name}_slice_{i+1}.png"
+                    seg_filename = f"segmented_{base_name}_slice_{i+1:03d}.png"
+                    orig_filename = f"original_{base_name}_slice_{i+1}"
                 else:
                     seg_filename = f"segmented_{base_name}.png"
-                    orig_filename = f"original_{base_name}.png"
+                    orig_filename = f"original_{base_name}"
                 
                 # Clean filenames to be valid
                 seg_filename = re.sub(r'[\\/*?:"<>|]', '_', seg_filename)
                 orig_filename = re.sub(r'[\\/*?:"<>|]', '_', orig_filename)
                 
-                # Save the segmentation image
+                # Save the segmentation image (always PNG)
                 seg_save_path = os.path.join(save_dir, seg_filename)
                 segmented_img.save(seg_save_path)
                 
                 # Save the original image
-                orig_save_path = os.path.join(save_dir, orig_filename)
-                orig_img=self.original_images[self.current_image_index]
-                orig_img.save(orig_save_path)
-
-
-
+                orig_img = self.original_images[i]
+                
+                # If we're saving high bit-depth, use TIFF and the raw data
+                if save_high_bit_depth and self.raw_image_data is not None:
+                    # Add TIFF extension
+                    orig_filename = f"{orig_filename}.tif"
+                    orig_save_path = os.path.join(save_dir, orig_filename)
+                    
+                    # Extract the appropriate slice if it's a multi-dimensional array
+                    if len(self.raw_image_data.shape) > 2:
+                        if i < self.raw_image_data.shape[0]:
+                            slice_data = self.raw_image_data[i]
+                        else:
+                            slice_data = self.raw_image_data
+                    else:
+                        slice_data = self.raw_image_data
+                    
+                    # Save using tifffile for better bit-depth support
+                    try:
+                        import tifffile
+                        tifffile.imwrite(orig_save_path, slice_data)
+                    except ImportError:
+                        # Fallback to imageio if tifffile is not available
+                        import imageio
+                        imageio.imwrite(orig_save_path, slice_data)
+                else:
+                    # Standard PNG save for 8-bit
+                    orig_filename = f"{orig_filename}.png"
+                    orig_save_path = os.path.join(save_dir, orig_filename)
+                    orig_img.save(orig_save_path)
             
             messagebox.showinfo("Success", f"Segmentations saved to {save_dir}")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to save segmentations: {str(e)}")           # Create directory if it doesn't exist
-            os.makedirs(save_dir, exist_ok=True)
-            
- 
+            messagebox.showerror("Error", f"Failed to save segmentations: {str(e)}")
     
     def apply_custom_brush_size(self):
         try:
@@ -3143,52 +3326,52 @@ class TissueSegmentationTool:
         close_button = ttk.Button(frame, text="Close", command=troubleshoot_window.destroy)
         close_button.pack(pady=10)
 
-    def load_new_folder(self):
-        """Load images from a new folder"""
-        # Ask if user wants to save current segmentation
-        if self.segmentation_masks and messagebox.askyesno("Save", "Do you want to save the current segmentation?"):
-            self.save_segmentations()
+    # def load_new_folder(self):
+    #     """Load images from a new folder"""
+    #     # Ask if user wants to save current segmentation
+    #     if self.segmentation_masks and messagebox.askyesno("Save", "Do you want to save the current segmentation?"):
+    #         self.save_segmentations()
         
-        # Ask for directory
-        new_dir = filedialog.askdirectory(title="Select Image Folder")
-        if not new_dir:
-            return  # User cancelled
+    #     # Ask for directory
+    #     new_dir = filedialog.askdirectory(title="Select Image Folder")
+    #     if not new_dir:
+    #         return  # User cancelled
         
-        # Check if directory contains images
-        image_files = self.get_image_files_in_directory(new_dir)
-        if not image_files:
-            messagebox.showerror("Error", "No supported image files found in the selected folder")
-            return
+    #     # Check if directory contains images
+    #     image_files = self.get_image_files_in_directory(new_dir)
+    #     if not image_files:
+    #         messagebox.showerror("Error", "No supported image files found in the selected folder")
+    #         return
         
-        # Load the first image from the new directory
-        self.current_directory = new_dir
-        self.image_paths = [image_files[0]]
-        self.directory_files = image_files
-        self.current_file_idx = 0
+    #     # Load the first image from the new directory
+    #     self.current_directory = new_dir
+    #     self.image_paths = [image_files[0]]
+    #     self.directory_files = image_files
+    #     self.current_file_idx = 0
         
-        # Reset zoom
-        self.zoom_factor = 1.0
-        self.canvas_x_offset = 0
-        self.canvas_y_offset = 0
+    #     # Reset zoom
+    #     self.zoom_factor = 1.0
+    #     self.canvas_x_offset = 0
+    #     self.canvas_y_offset = 0
         
-        # Process file based on extension
-        file_ext = os.path.splitext(image_files[0])[1].lower()
-        if file_ext == '.nd2':
-            self.process_nd2_file(image_files[0])
-        elif file_ext == '.oib':
-            self.process_oib_file(image_files[0])
-        elif file_ext in ['.jpg', '.jpeg', '.png', '.tif', '.tiff']:
-            self.process_regular_image(image_files[0])
-        else:
+    #     # Process file based on extension
+    #     file_ext = os.path.splitext(image_files[0])[1].lower()
+    #     if file_ext == '.nd2':
+    #         self.process_nd2_file(image_files[0])
+    #     elif file_ext == '.oib':
+    #         self.process_oib_file(image_files[0])
+    #     elif file_ext in ['.jpg', '.jpeg', '.png', '.tif', '.tiff']:
+    #         self.process_regular_image(image_files[0])
+    #     else:
 
-            return
+    #         return
         
-        # Reset history
-        self.history = []
-        self.history_index = -1
+    #     # Reset history
+    #     self.history = []
+    #     self.history_index = -1
         
-        # Update UI
-        self.create_annotation_window()
+    #     # Update UI
+    #     self.create_annotation_window()
 
     def auto_segment_slices(self, num_slices=1):
         """Auto-segment subsequent slices based on current slice annotation"""
@@ -3943,6 +4126,7 @@ class TissueSegmentationTool:
             elif file_ext in ['.jpg', '.jpeg', '.png']:
                 self.process_regular_image(file_path)
                 loading_successful = len(self.original_images) > 0
+                print('is loading successful', loading_successful)
             else:
                 messagebox.showerror("Error", f"Unsupported file format: {file_ext}")
                 return
@@ -4095,6 +4279,8 @@ class TissueSegmentationTool:
             if len(img_array.shape) == 2:
                 # Grayscale - convert to RGB
                 img_array = np.stack([img_array, img_array, img_array], axis=-1)
+            elif len(img_array.shape) == 3 and img_array.shape[2] == 3:
+                img_array= img_array
             
             # Create PIL image
             img = Image.fromarray(img_array)
@@ -4135,30 +4321,75 @@ class TissueSegmentationTool:
                 )
                 channel_rb.pack(anchor=tk.W, padx=5, pady=2)
         
-        # # Crop controls frame
-        # if self.raw_image_data is not None:
-        #     crop_frame = ttk.LabelFrame(parent_frame, text="Crop Controls")
-        #     crop_frame.pack(fill=tk.X, pady=5)
-            
-        #     crop_button = ttk.Button(
-        #         crop_frame, 
-        #         text="Configure Crop Region", 
-        #         command=self.show_crop_dialog
-        #     )
-        #     crop_button.pack(fill=tk.X, padx=5, pady=5)
-            
-        #     if self.is_cropped:
-        #         status_label = ttk.Label(crop_frame, text="✓ Image is cropped", foreground="green")
-        #         status_label.pack(padx=5, pady=2)
+        # Add contrast adjustment for high bit-depth images
+        if hasattr(self, 'raw_image_data') and self.raw_image_data is not None:
+            if self.raw_image_data.dtype in [np.uint16, np.float32, np.float64]:
+                contrast_frame = ttk.LabelFrame(parent_frame, text="Contrast Adjustment")
+                contrast_frame.pack(fill=tk.X, pady=5)
                 
-        #         reset_button = ttk.Button(
-        #             crop_frame, 
-        #             text="Reset to Original", 
-        #             command=self.reset_crop
-        #         )
-        #         reset_button.pack(fill=tk.X, padx=5, pady=2)
+                # Add explanation
+                ttk.Label(contrast_frame, 
+                         text="Adjust percentile thresholds to improve visibility of high bit-depth data",
+                         wraplength=220).pack(fill=tk.X, padx=5, pady=5)
+                
+                # Min percentile slider
+                min_frame = ttk.Frame(contrast_frame)
+                min_frame.pack(fill=tk.X, pady=2)
+                
+                ttk.Label(min_frame, text="Min threshold:").pack(side=tk.LEFT, padx=5)
+                
+                # Initialize with default values
+                self.min_percentile = tk.DoubleVar(value=1.0)  # Default 1st percentile
+                min_slider = ttk.Scale(
+                    min_frame,
+                    from_=0.0,
+                    to=20.0,
+                    orient=tk.HORIZONTAL,
+                    variable=self.min_percentile,
+                    command=self.update_contrast
+                )
+                min_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+                
+                self.min_percentile_label = ttk.Label(min_frame, text="1.0%", width=5)
+                self.min_percentile_label.pack(side=tk.LEFT, padx=5)
+                
+                # Max percentile slider
+                max_frame = ttk.Frame(contrast_frame)
+                max_frame.pack(fill=tk.X, pady=2)
+                
+                ttk.Label(max_frame, text="Max threshold:").pack(side=tk.LEFT, padx=5)
+                
+                self.max_percentile = tk.DoubleVar(value=99.0)  # Default 99th percentile
+                max_slider = ttk.Scale(
+                    max_frame,
+                    from_=80.0,
+                    to=100.0,
+                    orient=tk.HORIZONTAL,
+                    variable=self.max_percentile,
+                    command=self.update_contrast
+                )
+                max_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+                
+                self.max_percentile_label = ttk.Label(max_frame, text="99.0%", width=5)
+                self.max_percentile_label.pack(side=tk.LEFT, padx=5)
+                
+                # Reset button
+                reset_button = ttk.Button(
+                    contrast_frame,
+                    text="Reset Contrast",
+                    command=self.reset_contrast
+                )
+                reset_button.pack(fill=tk.X, padx=5, pady=5)
+                
+                # Apply button
+                apply_button = ttk.Button(
+                    contrast_frame,
+                    text="Apply to All Slices",
+                    command=self.apply_contrast_to_all
+                )
+                apply_button.pack(fill=tk.X, padx=5, pady=5)
         
-        # Export controls frame
+        # Export controls frame - MOVED UP before Crop & Save button
         export_frame = ttk.LabelFrame(parent_frame, text="Export")
         export_frame.pack(fill=tk.X, pady=5)
         
@@ -4184,14 +4415,134 @@ class TissueSegmentationTool:
             )
             export_combined_button.pack(fill=tk.X, padx=5, pady=2)
         
-        # Add crop and save 3D data button if raw data is available
-        if self.raw_image_data is not None:
-            crop_save_button = ttk.Button(
-                export_frame, 
-                text="Crop & Save 3D Data", 
-                command=self.show_crop_and_save_dialog
-            )
-            crop_save_button.pack(fill=tk.X, padx=5, pady=2)
+        # Add crop and save 3D data button in a separate frame at the bottom
+        # Always show the crop button but enable/disable based on data availability
+        crop_frame = ttk.LabelFrame(parent_frame, text="Crop & Save")
+        crop_frame.pack(fill=tk.X, pady=5)
+        
+        crop_save_button = ttk.Button(
+            crop_frame, 
+            text="Crop & Save 3D Data", 
+            command=self.show_crop_and_save_dialog,
+            state="normal" if self.raw_image_data is not None else "disabled"
+        )
+        crop_save_button.pack(fill=tk.X, padx=5, pady=5)
+    
+    def update_contrast(self, event=None):
+        """Update image contrast based on percentile sliders"""
+        if not hasattr(self, 'min_percentile') or not hasattr(self, 'max_percentile'):
+            return
+            
+        # Update labels
+        if hasattr(self, 'min_percentile_label'):
+            self.min_percentile_label.config(text=f"{self.min_percentile.get():.1f}%")
+        if hasattr(self, 'max_percentile_label'):
+            self.max_percentile_label.config(text=f"{self.max_percentile.get():.1f}%")
+            
+        # Apply contrast adjustment to current image
+        self.regenerate_current_image_with_contrast()
+        self.update_image()
+        
+    def reset_contrast(self):
+        """Reset contrast settings to defaults"""
+        if hasattr(self, 'min_percentile') and hasattr(self, 'max_percentile'):
+            self.min_percentile.set(1.0)
+            self.max_percentile.set(99.0)
+            self.update_contrast()
+            
+    def apply_contrast_to_all(self):
+        """Apply current contrast settings to all slices"""
+        if not hasattr(self, 'min_percentile') or not hasattr(self, 'max_percentile'):
+            return
+            
+        # Check if we have multiple images
+        if len(self.original_images) <= 1:
+            messagebox.showinfo("Info", "Only one slice available")
+            return
+            
+        # Confirm with user
+        if not messagebox.askyesno("Confirm", 
+                               f"Apply current contrast settings ({self.min_percentile.get():.1f}% - {self.max_percentile.get():.1f}%) to all {len(self.original_images)} slices?"):
+            return
+            
+        # Show progress dialog
+        progress_window = tk.Toplevel(self.root)
+        progress_window.title("Applying Contrast")
+        progress_window.geometry("300x150")
+        progress_window.transient(self.root)
+        progress_window.grab_set()
+        
+        progress_label = ttk.Label(progress_window, text="Processing slices...")
+        progress_label.pack(pady=10)
+        
+        progress_bar = ttk.Progressbar(progress_window, orient="horizontal", length=250, mode="determinate")
+        progress_bar.pack(pady=10)
+        progress_bar['maximum'] = len(self.original_images)
+        
+        # Update all images
+        current_idx = self.current_image_index
+        try:
+            for i in range(len(self.original_images)):
+                # Update progress
+                progress_bar['value'] = i + 1
+                progress_label.config(text=f"Processing slice {i+1}/{len(self.original_images)}...")
+                progress_window.update()
+                
+                # Set current index and regenerate
+                self.current_image_index = i
+                self.regenerate_current_image_with_contrast()
+        finally:
+            # Restore original index
+            self.current_image_index = current_idx
+            progress_window.destroy()
+            
+        # Update display
+        self.update_image()
+        messagebox.showinfo("Success", f"Applied contrast settings to all {len(self.original_images)} slices")
+        
+    def regenerate_current_image_with_contrast(self):
+        """Regenerate the current image with contrast adjustment"""
+        if not hasattr(self, 'raw_image_data') or self.raw_image_data is None:
+            return
+            
+        if not hasattr(self, 'min_percentile') or not hasattr(self, 'max_percentile'):
+            return
+            
+        # Get current slice data
+        if len(self.raw_image_data.shape) > 2:
+            if self.current_image_index < self.raw_image_data.shape[0]:
+                img_array = self.raw_image_data[self.current_image_index]
+            else:
+                img_array = self.raw_image_data[0]
+        else:
+            img_array = self.raw_image_data
+            
+        # Get percentile values
+        min_pct = self.min_percentile.get()
+        max_pct = self.max_percentile.get()
+        
+        # Apply normalization based on percentiles
+        if img_array.dtype in [np.uint16, np.float32, np.float64]:
+            # Calculate percentiles
+            p_min = np.percentile(img_array, min_pct) if img_array.size > 0 else 0
+            p_max = np.percentile(img_array, max_pct) if img_array.size > 0 else 1
+            
+            # Prevent division by zero
+            if p_max > p_min:
+                # Clip to remove outliers
+                img_array_clipped = np.clip(img_array, p_min, p_max)
+                # Normalize to 0-255
+                img_array_8bit = ((img_array_clipped - p_min) / (p_max - p_min) * 255).astype(np.uint8)
+            else:
+                # Fallback for flat images
+                img_array_8bit = np.zeros_like(img_array, dtype=np.uint8)
+                
+            # Convert to RGB if grayscale
+            if len(img_array_8bit.shape) == 2:
+                img_array_8bit = np.stack([img_array_8bit] * 3, axis=-1)
+                
+            # Update the current image
+            self.original_images[self.current_image_index] = Image.fromarray(img_array_8bit)
     
     def on_channel_change(self):
         """Handle channel selection change"""
@@ -4210,557 +4561,37 @@ class TissueSegmentationTool:
             self.regenerate_images_from_raw_data()
             self.update_image()
     
-    # def show_crop_dialog(self):
-    #     """Show dialog for selecting crop region using rectangle selection"""
-    #     if self.raw_image_data is None:
-    #         messagebox.showwarning("Warning", "No raw data available for cropping")
-    #         return
-    #     print('shape of raw image dataaaaa', self.raw_image_data.shape())
-    #     # Create a dialog with canvas for rectangle selection
-    #     dialog = tk.Toplevel(self.root)
-    #     dialog.title("Select Crop Region")
-    #     dialog.geometry("800x700")  # Made taller to accommodate zoom controls
-    #     dialog.transient(self.root)
-    #     dialog.grab_set()
-        
-    #     # Main frame
-    #     main_frame = ttk.Frame(dialog, padding="10")
-    #     main_frame.pack(fill=tk.BOTH, expand=True)
-        
-    #     # Instructions
-    #     ttk.Label(main_frame, text="Draw a rectangle to select the region to crop", 
-    #              font=("Arial", 10, "bold")).pack(pady=5)
-        
-    #     # Add zoom controls
-    #     zoom_frame = ttk.Frame(main_frame)
-    #     zoom_frame.pack(fill=tk.X, pady=5)
-        
-    #     ttk.Label(zoom_frame, text="Zoom:").pack(side=tk.LEFT, padx=5)
-        
-    #     zoom_var = tk.DoubleVar(value=1.0)
-        
-    #     def update_zoom(event=None):
-    #         zoom_level = zoom_var.get()
-    #         zoom_label.config(text=f"{zoom_level:.1f}x")
-    #         display_image_with_zoom()
-        
-    #     zoom_slider = ttk.Scale(
-    #         zoom_frame,
-    #         from_=0.1,
-    #         to=5.0,
-    #         orient=tk.HORIZONTAL,
-    #         variable=zoom_var,
-    #         command=update_zoom,
-    #         length=200
-    #     )
-    #     zoom_slider.pack(side=tk.LEFT, padx=5)
-        
-    #     zoom_label = ttk.Label(zoom_frame, text="1.0x", width=5)
-    #     zoom_label.pack(side=tk.LEFT, padx=5)
-        
-    #     zoom_reset = ttk.Button(zoom_frame, text="Reset Zoom", 
-    #                        command=lambda: (zoom_var.set(1.0), update_zoom()))
-    #     zoom_reset.pack(side=tk.LEFT, padx=5)
-        
-    #     # Canvas for image display with scrollbars
-    #     canvas_frame = ttk.Frame(main_frame)
-    #     canvas_frame.pack(fill=tk.BOTH, expand=True, pady=5)
-        
-    #     h_scrollbar = ttk.Scrollbar(canvas_frame, orient=tk.HORIZONTAL)
-    #     h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
-        
-    #     v_scrollbar = ttk.Scrollbar(canvas_frame, orient=tk.VERTICAL)
-    #     v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-    #     canvas = tk.Canvas(
-    #         canvas_frame, 
-    #         bg="black",
-    #         xscrollcommand=h_scrollbar.set,
-    #         yscrollcommand=v_scrollbar.set
-    #     )
-    #     canvas.pack(fill=tk.BOTH, expand=True)
-        
-    #     h_scrollbar.config(command=canvas.xview)
-    #     v_scrollbar.config(command=canvas.yview)
-        
-    #     # Enable mouse wheel scrolling
-    #     def on_mousewheel(event):
-    #         if event.state & 0x4:  # Check if Ctrl key is pressed
-    #             # Zoom with Ctrl+Wheel
-    #             if event.delta > 0:
-    #                 new_zoom = min(5.0, zoom_var.get() + 0.1)
-    #             else:
-    #                 new_zoom = max(0.1, zoom_var.get() - 0.1)
-    #             zoom_var.set(new_zoom)
-    #             update_zoom()
-    #         else:
-    #             # Scroll vertically
-    #             canvas.yview_scroll(-1 * (event.delta // 120), "units")
-        
-    #     canvas.bind("<MouseWheel>", on_mousewheel)  # Windows
-    #     canvas.bind("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))  # Linux
-    #     canvas.bind("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))  # Linux
-        
-    #     # Variables for selection
-    #     selection_rect = None
-    #     start_x, start_y = 0, 0
-    #     end_x, end_y = 0, 0
-        
-    #     # Get the image data for the current frame
-    #     if len(self.original_shape) == 2:  # Single 2D image
-    #         img_array = self.raw_image_data
-    #     elif len(self.original_shape) == 3:  # (Z, Y, X) 
-    #         img_array = self.raw_image_data[self.current_image_index]
-    #     elif len(self.original_shape) == 4:  # (C, Z, Y, X)
-    #         img_array = self.raw_image_data[self.current_image_index]
-    #     else:
-    #         img_array = self.raw_image_data
-        
-    #     # display_img = Image.fromarray(img_array)
-    #     display_img = Image.fromarray(img_array)
-
-    #     print('shape of display image', display_img.shape)
-    #     # Convert to PIL image
-        
-        
-    #     # if isinstance(img_array, np.ndarray):
-    #     #     # Normalize for display
-    #     #     if img_array.dtype != np.uint8:
-    #     #         img_array = ((img_array - img_array.min()) / (img_array.max() - img_array.min()) * 255).astype(np.uint8)
-            
-    #     #     # Handle different channel configurations
-    #     #     if len(img_array.shape) == 2:  # Grayscale
-    #     #         display_img = Image.fromarray(img_array)
-    #     #     elif len(img_array.shape) == 3:  # RGB or similar
-    #     #         if img_array.shape[2] == 1:
-    #     #             display_img = Image.fromarray(img_array[:,:,0])
-    #     #         elif img_array.shape[2] == 2:
-    #     #             display_img = Image.fromarray(0.5*img_array[:,:,0]+ 0.5*img_array[:,:,1])
-    #     #         elif img_array.shape[2] == 3:
-    #     #             display_img = Image.fromarray(0.5*img_array[:,:,0]+ 0.5*img_array[:,:,1])
-    #     #         elif img_array.shape[2] == 4:
-    #     #             display_img = Image.fromarray(img_array)
-    #     #         else:
-    #     #             # Take first channel for display
-    #     #             display_img = Image.fromarray(img_array[:,:,0])
-    #     #     elif len(img_array.shape) == 4:  # RGB or similar
-    #     #         if img_array.shape[0] == 2:
-    #     #             display_img = Image.fromarray(0.5*img_array[:,:,0]+ 0.5*img_array[:,:,1])
-
-    #     #         else:
-    #     #             # Take first channel for display
-    #     #             display_img = Image.fromarray(img_array[:,:,0])
-    #     #     else:
-    #     #         display_img = Image.fromarray(np.zeros((100, 100), dtype=np.uint8))
-    #     # else:
-    #     #     display_img = Image.fromarray(np.zeros((100, 100), dtype=np.uint8))
-        
-    #     # Store original image dimensions
-    #     original_width, original_height = display_img.size
-    #     print('original width and height', original_width, original_height)
-        
-    #     # Function to display image with current zoom
-    #     def display_image_with_zoom():
-    #         zoom = zoom_var.get()
-            
-    #         # Calculate new dimensions
-    #         new_width = int(original_width * zoom)
-    #         new_height = int(original_height * zoom)
-            
-    #         # Resize image for display
-    #         if zoom == 1.0:
-    #             resized_img = display_img
-    #         else:
-    #             resized_img = display_img.resize((new_width, new_height), Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS)
-            
-    #         # Convert to PhotoImage
-    #         photo_img = ImageTk.PhotoImage(resized_img)
-            
-    #         # Update canvas
-    #         canvas.delete("all")
-    #         canvas.config(scrollregion=(0, 0, new_width, new_height))
-    #         canvas.create_image(0, 0, anchor=tk.NW, image=photo_img)
-    #         canvas.image = photo_img  # Keep reference
-            
-    #         # Redraw selection rectangle if it exists
-    #         if start_x != end_x and start_y != end_y:
-    #             # Scale the coordinates to match zoom
-    #             scaled_start_x = int(start_x * zoom)
-    #             scaled_start_y = int(start_y * zoom)
-    #             scaled_end_x = int(end_x * zoom)
-    #             scaled_end_y = int(end_y * zoom)
-                
-    #             canvas.create_rectangle(
-    #                 scaled_start_x, scaled_start_y, 
-    #                 scaled_end_x, scaled_end_y,
-    #                 outline="red", width=2, tags="selection"
-    #             )
-        
-    #     # Initial display
-    #     display_image_with_zoom()
-        
-    #     # Selection coordinates display
-    #     coords_var = tk.StringVar(value="Selection: None")
-    #     ttk.Label(main_frame, textvariable=coords_var).pack(pady=5)
-        
-    #     # Z-dimension controls if applicable
-    #     z_start_var = tk.StringVar(value="0")
-    #     z_end_var = tk.StringVar(value="0")
-    #     has_z_dimension = True
-    #     z_size = 0
-        
-
-        
-    #     if has_z_dimension:
-    #         z_frame = ttk.LabelFrame(main_frame, text="Z-Dimension Range")
-    #         z_frame.pack(fill=tk.X, pady=5)
-            
-    #         z_grid = ttk.Frame(z_frame)
-    #         z_grid.pack(pady=10, padx=10, fill=tk.X)
-            
-    #         ttk.Label(z_grid, text="Start Z:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
-    #         ttk.Label(z_grid, text="End Z:").grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
-            
-    #         z_start_var.set("0")
-    #         z_end_var.set(str(z_size))
-            
-    #         z_start_entry = ttk.Entry(z_grid, textvariable=z_start_var, width=10)
-    #         z_start_entry.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
-            
-    #         z_end_entry = ttk.Entry(z_grid, textvariable=z_end_var, width=10)
-    #         z_end_entry.grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
-            
-    #         ttk.Label(z_grid, text=f"(Max: {z_size})").grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
-        
-    #     # Functions for rectangle selection
-    #     def start_selection(event):
-    #         nonlocal selection_rect, start_x, start_y
-            
-    #         # Convert canvas coordinates to original image coordinates
-    #         zoom = zoom_var.get()
-    #         canvas_x = canvas.canvasx(event.x)
-    #         canvas_y = canvas.canvasy(event.y)
-            
-    #         # Convert to original image coordinates
-    #         start_x = int(canvas_x / zoom)
-    #         start_y = int(canvas_y / zoom)
-            
-    #         # Create new rectangle
-    #         selection_rect = canvas.create_rectangle(
-    #             canvas_x, canvas_y, canvas_x, canvas_y,
-    #             outline="red", width=2, tags="selection"
-    #         )
-        
-    #     def update_selection(event):
-    #         nonlocal end_x, end_y
-            
-    #         if selection_rect:
-    #             # Convert canvas coordinates to original image coordinates
-    #             zoom = zoom_var.get()
-    #             canvas_x = canvas.canvasx(event.x)
-    #             canvas_y = canvas.canvasy(event.y)
-                
-    #             # Convert to original image coordinates
-    #             end_x = int(canvas_x / zoom)
-    #             end_y = int(canvas_y / zoom)
-                
-    #             # Update rectangle
-    #             canvas.coords(selection_rect, 
-    #                          start_x * zoom, start_y * zoom, 
-    #                          canvas_x, canvas_y)
-                
-    #             # Update coordinates display
-    #             width = abs(end_x - start_x)
-    #             height = abs(end_y - start_y)
-    #             coords_var.set(f"Selection: ({min(start_x, end_x)}, {min(start_y, end_y)}) to " +
-    #                           f"({max(start_x, end_x)}, {max(start_y, end_y)}), Size: {width}x{height}")
-        
-    #     def end_selection(event):
-    #         nonlocal end_x, end_y
-            
-    #         if selection_rect:
-    #             # Convert canvas coordinates to original image coordinates
-    #             zoom = zoom_var.get()
-    #             canvas_x = canvas.canvasx(event.x)
-    #             canvas_y = canvas.canvasy(event.y)
-                
-    #             # Convert to original image coordinates
-    #             end_x = int(canvas_x / zoom)
-    #             end_y = int(canvas_y / zoom)
-                
-    #             # Ensure coordinates are within image bounds
-    #             end_x = max(0, min(end_x, original_width))
-    #             end_y = max(0, min(end_y, original_height))
-                
-    #             # Update rectangle
-    #             canvas.coords(selection_rect, 
-    #                          start_x * zoom, start_y * zoom, 
-    #                          end_x * zoom, end_y * zoom)
-        
-    #     # Bind events
-    #     canvas.bind("<ButtonPress-1>", start_selection)
-    #     canvas.bind("<B1-Motion>", update_selection)
-    #     canvas.bind("<ButtonRelease-1>", end_selection)
-        
-    #     # Buttons
-    #     button_frame = ttk.Frame(main_frame)
-    #     button_frame.pack(fill=tk.X, pady=10)
-        
-    #     def apply_crop():
-    #         # Get selection coordinates
-    #         x_start = min(start_x, end_x)
-    #         y_start = min(start_y, end_y)
-    #         x_end = max(start_x, end_x)
-    #         y_end = max(start_y, end_y)
-            
-    #         # Validate selection
-    #         if x_start == x_end or y_start == y_end:
-    #             messagebox.showerror("Error", "Invalid selection. Please select a region.")
-    #             return
-            
-    #         # Get Z range if applicable
-    #         z_start = 0
-    #         z_end = 0
-    #         if has_z_dimension:
-    #             try:
-    #                 z_start = int(z_start_var.get())
-    #                 z_end = int(z_end_var.get())
-                    
-    #                 if z_start < 0 or z_end > z_size or z_start > z_end:
-    #                     messagebox.showerror("Error", f"Invalid Z range. Must be between 0 and {z_size}.")
-    #                     return
-    #             except ValueError:
-    #                 messagebox.showerror("Error", "Please enter valid Z range values.")
-    #                 return
-            
-    #         # Perform crop on raw data
-    #         try:
-    #             if len(self.original_shape) == 2:  # Single 2D image
-    #                 cropped_data = self.raw_image_data[y_start:y_end+1, x_start:x_end+1]
-    #             elif len(self.original_shape) == 3:
-    #                 if self.original_shape[2] in [3, 4]:  # (Y, X, C)
-    #                     cropped_data = self.raw_image_data[y_start:y_end+1, x_start:x_end+1, :]
-    #                 else:  # (Z, Y, X)
-    #                     cropped_data = self.raw_image_data[z_start:z_end+1, y_start:y_end+1, x_start:x_end+1]
-    #             elif len(self.original_shape) == 4:  # (Z, C, Y, X) or similar
-    #                 cropped_data = self.raw_image_data[:, z_start:z_end+1, y_start:y_end+1, x_start:x_end+1]
-    #             else:
-    #                 messagebox.showerror("Error", "Unsupported data shape for cropping.")
-    #                 return
-                
-    #             # Update raw data
-    #             self.raw_image_data = cropped_data
-    #             self.original_shape = cropped_data.shape
-                
-    #             # Update display
-    #             self.regenerate_images_from_raw_data()
-                
-    #             # Close dialog
-    #             dialog.destroy()
-                
-    #             # Show success message
-    #             messagebox.showinfo("Success", f"Image cropped to region ({x_start}, {y_start}) - ({x_end}, {y_end})" + 
-    #                               (f" and Z range {z_start}-{z_end}" if has_z_dimension else ""))
-                
-    #         except Exception as e:
-    #             messagebox.showerror("Error", f"Failed to crop: {str(e)}")
-        
-    #     ttk.Button(button_frame, text="Apply Crop", command=apply_crop).pack(side=tk.LEFT, padx=5)
-    #     ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT, padx=5)
-        
-    #     # Center dialog
-    #     dialog.update_idletasks()
-    #     width = dialog.winfo_width()
-    #     height = dialog.winfo_height()
-    #     x = (dialog.winfo_screenwidth() // 2) - (width // 2)
-    #     y = (dialog.winfo_screenheight() // 2) - (height // 2)
-    #     dialog.geometry(f'{width}x{height}+{x}+{y}')
-    
-    # def reset_crop(self):
-    #     """Reset to original uncropped data"""
-    #     if self.original_raw_data is not None:
-    #         self.raw_image_data = self.original_raw_data.copy()
-    #         self.is_cropped = False
-            
-    #         # Regenerate images
-    #         self.regenerate_images_from_raw_data()
-            
-    #         # Update segmentation masks
-    #         self.segmentation_masks = [Image.new('RGBA', img.size, (0, 0, 0, 0)) for img in self.original_images]
-    #         self.current_image_index = 0
-            
-    #         # Refresh UI
-    #         self.create_annotation_window()
-            
-    #         messagebox.showinfo("Success", "Reset to original data")
-    
-    def regenerate_images_from_raw_data(self):
-        """Regenerate display images from raw data based on current settings"""
-        if self.raw_image_data is None:
-            return
-        
-        self.original_images = []
-        data = self.raw_image_data
-        
-        # Simplified processing for now
-        if len(data.shape) >= 4:  # Multi-dimensional
-            # Take first timepoint if exists
-            if data.shape[0] > 1:  # Likely time dimension
-                data = data[0]
-            
-            # Handle channels
-            if len(data.shape) >= 3 and data.shape[0] > 1:  # Likely channel dimension
-                if self.selected_channel is None:
-                    # Combine all channels
-                    if data.shape[0] == 3:
-                        # RGB-like, transpose to put channels last
-                        data = np.transpose(data, (1, 2, 0))
-                    else:
-                        # Average channels
-                        data = np.mean(data, axis=0)
-                else:
-                    # Select specific channel
-                    if self.selected_channel < data.shape[0]:
-                        data = data[self.selected_channel]
-                    else:
-                        data = data[0]  # Fallback
-            
-            # Handle Z dimension
-            if len(data.shape) == 3 and data.shape[0] > 1:  # Z, Y, X
-                for z in range(data.shape[0]):
-                    img_array = data[z]
-                    pil_img = self.array_to_pil_image(img_array)
-                    if pil_img:
-                        self.original_images.append(pil_img)
-            else:  # Single 2D image
-                pil_img = self.array_to_pil_image(data)
-                if pil_img:
-                    self.original_images.append(pil_img)
-        else:
-            # Simple 2D case
-            pil_img = self.array_to_pil_image(data)
-            if pil_img:
-                self.original_images.append(pil_img)
-    
-    def export_raw_images(self):
-        """Export raw images in current channel configuration"""
-        if not self.original_images:
-            messagebox.showerror("Error", "No images to export")
-            return
-        
-        save_dir = filedialog.askdirectory(title="Select Export Directory")
-        if not save_dir:
-            return
-        
-        try:
-            base_name = "raw_image"
-            if self.image_paths:
-                base_name = os.path.splitext(os.path.basename(self.image_paths[0]))[0]
-            
-            for i, img in enumerate(self.original_images):
-                if len(self.original_images) > 1:
-                    filename = f"{base_name}_slice_{i+1:03d}.png"
-                else:
-                    filename = f"{base_name}_raw.png"
-                
-                save_path = os.path.join(save_dir, filename)
-                img.save(save_path)
-            
-            messagebox.showinfo("Success", f"Exported {len(self.original_images)} raw images to {save_dir}")
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to export raw images: {str(e)}")
-    
-    def export_annotation_masks(self):
-        """Export annotation masks"""
-        if not self.segmentation_masks:
-            messagebox.showerror("Error", "No annotation masks to export")
-            return
-        
-        save_dir = filedialog.askdirectory(title="Select Export Directory")
-        if not save_dir:
-            return
-        
-        try:
-            base_name = "annotation_mask"
-            if self.image_paths:
-                base_name = os.path.splitext(os.path.basename(self.image_paths[0]))[0]
-            
-            for i, mask in enumerate(self.segmentation_masks):
-                if len(self.segmentation_masks) > 1:
-                    filename = f"{base_name}_mask_{i+1:03d}.png"
-                else:
-                    filename = f"{base_name}_mask.png"
-                
-                save_path = os.path.join(save_dir, filename)
-                mask.save(save_path)
-            
-            messagebox.showinfo("Success", f"Exported {len(self.segmentation_masks)} annotation masks to {save_dir}")
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to export annotation masks: {str(e)}")
-    
-    def export_multichannel_combined(self):
-        """Export multi-channel data as combined single channel"""
-        if self.raw_image_data is None:
-            messagebox.showerror("Error", "No multi-channel data available")
-            return
-        
-        save_dir = filedialog.askdirectory(title="Select Export Directory")
-        if not save_dir:
-            return
-        
-        try:
-            # Temporarily set to combine all channels
-            original_selection = self.selected_channel
-            self.selected_channel = None
-            
-            # Regenerate images with combined channels
-            self.regenerate_images_from_raw_data()
-            
-            base_name = "multichannel_combined"
-            if self.image_paths:
-                base_name = os.path.splitext(os.path.basename(self.image_paths[0]))[0] + "_combined"
-            
-            for i, img in enumerate(self.original_images):
-                if len(self.original_images) > 1:
-                    filename = f"{base_name}_slice_{i+1:03d}.png"
-                else:
-                    filename = f"{base_name}.png"
-                
-                save_path = os.path.join(save_dir, filename)
-                img.save(save_path)
-            
-            # Restore original selection
-            self.selected_channel = original_selection
-            self.regenerate_images_from_raw_data()
-            
-            messagebox.showinfo("Success", f"Exported {len(self.original_images)} combined multi-channel images to {save_dir}")
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to export multi-channel combined: {str(e)}")
-    
     def show_crop_and_save_dialog(self):
         """Show dialog for cropping and saving 3D data as ND2 or OIB file"""
         if self.raw_image_data is None:
-            messagebox.showwarning("Warning", "No 3D data available for cropping and saving")
+            messagebox.showwarning("Warning", "No data available for cropping and saving")
             return
+            
+        print("Opening crop dialog...")  # Debug message
         # Create dialog with canvas for rectangle selection
         dialog = tk.Toplevel(self.root)
-        dialog.title("Crop and Save 3D Data")
-        dialog.geometry("800x1000")  # Made larger to accommodate all controls
+        dialog.title("Crop and Save Data")
+        dialog.geometry("800x800")  # Adjusted size to fit on screen better
         dialog.transient(self.root)
         dialog.grab_set()
+        
+        # Position the dialog in the center of the screen
+        dialog.update_idletasks()
+        screen_width = dialog.winfo_screenwidth()
+        screen_height = dialog.winfo_screenheight()
+        x = (screen_width - 800) // 2
+        y = (screen_height - 800) // 2
+        dialog.geometry(f"800x800+{x}+{y}")
         
         # Main frame
         frame = ttk.Frame(dialog, padding="20")
         frame.pack(fill=tk.BOTH, expand=True)
         
-        ttk.Label(frame, text="Crop and Save 3D Data", font=("Arial", 14, "bold")).pack(pady=10)
+        ttk.Label(frame, text="Crop and Save Data", font=("Arial", 14, "bold")).pack(pady=10)
         ttk.Label(frame, text=f"Original Shape: {self.original_shape}", font=("Arial", 10)).pack(pady=5)
         
         # 3D Dimensions frame
-        dim_frame = ttk.LabelFrame(frame, text="3D Dimensions")
+        dim_frame = ttk.LabelFrame(frame, text="Dimensions")
         dim_frame.pack(fill=tk.X, pady=10, padx=5)
         
         # Determine available dimensions based on shape
@@ -4768,6 +4599,17 @@ class TissueSegmentationTool:
         has_c_dimension = False
         has_t_dimension = False
         z_size = c_size = t_size = 0
+        
+        # Safely check original_shape
+        if self.original_shape is None:
+            # If shape is None, try to get it from raw_image_data
+            if self.raw_image_data is not None:
+                self.original_shape = self.raw_image_data.shape
+            else:
+                # Default shape if no data is available
+                self.original_shape = (0, 0)
+
+        print('shape of original_shape', np.shape(self.original_shape))
         
         # Set up dimension ranges based on data shape
         if len(self.original_shape) == 3 and self.original_shape[2] in [2, 3, 4]:  # (Y, X, C) or similar
@@ -4781,7 +4623,6 @@ class TissueSegmentationTool:
             has_z_dimension = self.original_shape[1] > 1
             c_size = self.original_shape[0] - 1
             z_size = self.original_shape[1] - 1
-
         
         # Create entry fields for each dimension
         dim_entries = {}
@@ -4909,10 +4750,24 @@ class TissueSegmentationTool:
                 else:  # Default to first slice
                     img_array = self.raw_image_data[0]
                 
-                # Normalize for display
+                # Normalize for display with better contrast preservation
                 if img_array.dtype != np.uint8:
-                    img_array = ((img_array - img_array.min()) / 
-                                (img_array.max() - img_array.min() + 1e-8) * 255).astype(np.uint8)
+                    # Use robust normalization to handle outliers
+                    p1, p99 = np.percentile(img_array, (1, 99)) if img_array.size > 0 else (0, 1)
+                    
+                    # Prevent division by zero
+                    if p99 > p1:
+                        # Clip to remove extreme outliers
+                        img_array_clipped = np.clip(img_array, p1, p99)
+                        # Normalize to 0-255
+                        img_array = ((img_array_clipped - p1) / (p99 - p1) * 255).astype(np.uint8)
+                    else:
+                        # Fallback for flat images
+                        img_array = ((img_array - img_array.min()) / (max(img_array.max() - img_array.min(), 1)) * 255).astype(np.uint8)
+                
+                # Convert to RGB if grayscale
+                if len(img_array.shape) == 2:
+                    img_array = np.stack([img_array, img_array, img_array], axis=-1)
                 
                 display_img = Image.fromarray(img_array)
                 
@@ -4924,6 +4779,44 @@ class TissueSegmentationTool:
                 update_zoom()
             except Exception as e:
                 print(f"Error updating slice: {str(e)}")
+            
+        # Add code to properly display the image in the crop dialog
+        def display_image_with_zoom():
+            zoom = zoom_var.get()
+            zoom_label.config(text=f"{zoom:.1f}x")
+            
+            # Calculate new dimensions
+            new_width = int(original_width * zoom)
+            new_height = int(original_height * zoom)
+            
+            # Resize image for display with high quality
+            if zoom == 1.0:
+                resized_img = display_img
+            else:
+                resized_img = display_img.resize((new_width, new_height), Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS)
+            
+            # Convert to PhotoImage
+            photo_img = ImageTk.PhotoImage(resized_img)
+            
+            # Update canvas
+            canvas.delete("all")
+            canvas.config(scrollregion=(0, 0, new_width, new_height))
+            canvas.create_image(0, 0, anchor=tk.NW, image=photo_img)
+            canvas.image = photo_img  # Keep reference
+            
+            # Redraw selection rectangle if it exists
+            if start_x != end_x and start_y != end_y:
+                # Scale the coordinates to match zoom
+                scaled_start_x = int(start_x * zoom)
+                scaled_start_y = int(start_y * zoom)
+                scaled_end_x = int(end_x * zoom)
+                scaled_end_y = int(end_y * zoom)
+                
+                canvas.create_rectangle(
+                    scaled_start_x, scaled_start_y, 
+                    scaled_end_x, scaled_end_y,
+                    outline="red", width=2, tags="selection"
+                )
         slice_slider = ttk.Scale(
             slice_nav_frame,
             from_=0,
@@ -4997,42 +4890,9 @@ class TissueSegmentationTool:
         
         h_scrollbar.config(command=canvas.xview)
         v_scrollbar.config(command=canvas.yview)
+        # Use the improved display_image_with_zoom function instead
         def update_zoom(event=None):
-            zoom = zoom_var.get()
-            zoom_label.config(text=f"{zoom:.1f}x")
-            
-            # Calculate new dimensions
-            new_width = int(original_width * zoom)
-            new_height = int(original_height * zoom)
-            
-            # Resize image for display
-            if zoom == 1.0:
-                resized_img = display_img
-            else:
-                resized_img = display_img.resize((new_width, new_height), Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS)
-            
-            # Convert to PhotoImage
-            photo_img = ImageTk.PhotoImage(resized_img)
-            
-            # Update canvas
-            canvas.delete("all")
-            canvas.config(scrollregion=(0, 0, new_width, new_height))
-            canvas.create_image(0, 0, anchor=tk.NW, image=photo_img)
-            canvas.image = photo_img  # Keep reference
-            
-            # Redraw selection rectangle if it exists
-            if start_x != end_x and start_y != end_y:
-                # Scale the coordinates to match zoom
-                scaled_start_x = int(start_x * zoom)
-                scaled_start_y = int(start_y * zoom)
-                scaled_end_x = int(end_x * zoom)
-                scaled_end_y = int(end_y * zoom)
-                
-                canvas.create_rectangle(
-                    scaled_start_x, scaled_start_y, 
-                    scaled_end_x, scaled_end_y,
-                    outline="red", width=2, tags="selection"
-                )
+            display_image_with_zoom()
         # Enable mouse wheel scrolling
         def on_mousewheel(event):
             if event.state & 0x4:  # Check if Ctrl key is pressed
@@ -5056,15 +4916,47 @@ class TissueSegmentationTool:
         start_x, start_y = 0, 0
         end_x, end_y = 0, 0
 
-    # Update displayed image based on slice index
-        if has_z_dimension and has_c_dimension:  # (C, Z, Y, X)
-            display_img=Image.fromarray(self.raw_image_data[0, 0, :, :])
-        elif has_c_dimension and self.raw_image_data.shape[2] in [2, 3, 4]:  # (c, Y, X)
-            display_img=Image.fromarray(self.raw_image_data[:, :, :])
-        elif has_z_dimension:  # (Z, Y, X)
-            display_img=Image.fromarray(self.raw_image_data[0, :, :])
-        else:  # Default to first slice
-            display_img=Image.fromarray(self.raw_image_data[0, 0, :, :])
+    # Update displayed image based on slice index with better normalization
+        try:
+            if has_z_dimension and has_c_dimension:  # (C, Z, Y, X)
+                img_array = self.raw_image_data[0, 0, :, :]
+            elif has_c_dimension and self.raw_image_data.shape[2] in [2, 3, 4]:  # (Y, X, C)
+                img_array = self.raw_image_data
+            elif has_z_dimension:  # (Z, Y, X)
+                img_array = self.raw_image_data[0]
+            else:  # Default to first slice
+                img_array = self.raw_image_data
+                
+            # Apply robust normalization for better contrast
+            if img_array.dtype != np.uint8:
+                # Use robust normalization to handle outliers
+                p1, p99 = np.percentile(img_array, (1, 99)) if img_array.size > 0 else (0, 1)
+                
+                # Prevent division by zero
+                if p99 > p1:
+                    # Clip to remove extreme outliers
+                    img_array_clipped = np.clip(img_array, p1, p99)
+                    # Normalize to 0-255
+                    img_array = ((img_array_clipped - p1) / (p99 - p1) * 255).astype(np.uint8)
+                else:
+                    # Fallback for flat images
+                    img_array = ((img_array - img_array.min()) / (max(img_array.max() - img_array.min(), 1)) * 255).astype(np.uint8)
+            
+            # Convert to RGB if grayscale
+            if len(img_array.shape) == 2:
+                img_array = np.stack([img_array, img_array, img_array], axis=-1)
+            elif len(img_array.shape) == 3 and img_array.shape[2] == 1:
+                img_array = np.concatenate([img_array, img_array, img_array], axis=2)
+            elif len(img_array.shape) == 3 and img_array.shape[2] > 3:
+                # Take first 3 channels for RGB
+                img_array = img_array[:, :, :3]
+                
+            # Create PIL image
+            display_img = Image.fromarray(img_array)
+        except Exception as e:
+            print(f"Error preparing image for display: {e}")
+            # Create a default gray image as fallback
+            display_img = Image.fromarray(np.ones((200, 200, 3), dtype=np.uint8) * 128)
             
         # # Get the image data for the current frame
         # current_idx = self.current_image_index
@@ -5353,9 +5245,18 @@ class TissueSegmentationTool:
                 
                 # Crop the data
                 cropped_data = self.raw_image_data[tuple(slices)]
+                print('shape of cropped image 3D:' , np.shape(cropped_data))
+                
+                # Get z_start value for 3D data
+                z_start = 0
+                if has_z_dimension:
+                    try:
+                        z_start = int(z_start_var.get())
+                    except (ValueError, NameError):
+                        z_start = 0
                 
                 # Save the data
-                self.save_3d_data(cropped_data, output_path, z_start,  crop_info)
+                self.save_3d_data(cropped_data, output_path, z_start, crop_info)
                 
                 # Close progress window
                 progress_window.destroy()
@@ -5388,78 +5289,239 @@ class TissueSegmentationTool:
 
         try:
             import imageio
-            # For nd2, we'll use a different approach since direct writing may not be available
-            # Convert to TIFF stack as an alternative that's widely supported
             import tifffile
-            # from skimage.external import tifffile as tif
+            import os
             
-            # # Change extension to .tif if nd2 writing isn't supported
-            # if output_path.endswith('.nd2'):
-            #     output_path = output_path[:-4] + '.tif'
-            #     messagebox.showwarning("Format Note", 
-            #         "ND2 writing not directly supported. Saving as multi-page TIFF instead, which can be loaded by most microscopy software.")
+            # Ensure output directory exists
+            os.makedirs(output_path, exist_ok=True)
             
-            # Save as multi-page TIFF
-            # print('shape of tiff data', data.shape)
-            # if len(data.shape) >= 3:
-            #     # Reshape data to ensure it's in the right format
-            #     if len(data.shape) == 5:  # (T, C, Z, Y, X)
-            #         data = data.transpose(0, 2, 1, 3, 4)  # (T, Z, C, Y, X)
-            #     elif len(data.shape) == 4:  # Could be (T, C, Y, X) or (C, Z, Y, X)
-            #         # Assume it's (T/Z, C, Y, X) and reorder to (T/Z, C, Y, X)
-            #         pass
-            #     elif len(data.shape) == 3:  # (Z, Y, X)
-            #         # Add channel dimension: (Z, 1, Y, X)
-            #         data = data[:, np.newaxis, :, :]
-            
-            # tifffile.imwrite(output_path, data[0, :, :, :])
-            # imageio.mimwrite(output_path, data[0, :, :, :], format='tiff')
-            # tif.imsave(output_path, data[0, :, :, :], bigtiff=True)
-            # alpha = 0.5  # Change to control contribution
-            # blended_data = (alpha * data[0, :, :, :] + (1 - alpha) * data[1, :, :, :])
-            # tifffile.imwrite(output_path, data)
-
-            # os.makedirs('tiffs_tifffile', exist_ok=True)
-
             print('z start', z_start)
+            print('length of cropped data', len(np.shape(data)))
+            print('Shape of cropped data', np.shape(data))
 
-            for i in range(data.shape[1]):
-
-                img1_norm = data[0, i, :, :]/np.max(data[0, i, :, :])
-                img2_norm = data[1, i, :, :]/np.max(data[1, i, :, :])
-                # Create RGB image with zeros (black background)
-                rgb_image = np.zeros((data.shape[2], data.shape[3], 3), dtype=np.uint8)
-
-                # Set red channel (img1) - any non-zero value becomes full red
-                rgb_image[:, :, 0]=img1_norm*255  # Red channel
-
-                # Set green channel (img2) - any non-zero value becomes full green
-                rgb_image[:, :, 1]=  img2_norm*255 # Green channel
-
-
-
-                # Create empty blue channel
-                blue = np.zeros_like(img1_norm, dtype=np.uint8)
-                rgb_image[:, :, 2]=blue
-
-                # Stack channels into RGB image
-                # rgb = np.stack((img1*255, img2*255, blue*255), axis=-1)
-
-
-
-                # tifffile.imwrite(f'{output_path}/_slice_{i}.tif', rgb_image)
-                imageio.imwrite(f'{output_path}/{crop_info}_slice_{z_start+i}.png', rgb_image)
-
-
-                # Write the images to a multi-page TIFF file
-            # with tifffile.TiffWriter(output_path) as tif:
-            #     # for image in image_data:
-            #     tif.write(data)
-                
-
+            # Handle different data shapes safely
+            data_shape = data.shape
+            
+            # Case 1: 3D data with multiple slices (Z, Y, X)
+            if len(data_shape) == 3 and data_shape[0] > 1 and data_shape[2] not in [3, 4]:
+                print('Processing 3D data with multiple slices')
+                for i in range(data_shape[0]):
+                    # Save each slice as a separate image
+                    imageio.imwrite(f'{output_path}/{crop_info}_slice_{z_start+i}.png', data[i])
+            
+            # Case 2: 3D data with RGB/RGBA channels (Y, X, C)
+            elif len(data_shape) == 3 and data_shape[2] in [3, 4]:
+                print('Processing RGB/RGBA image')
+                imageio.imwrite(f'{output_path}/{crop_info}.png', data)
+            
+            # Case 3: 4D data (C, Z, Y, X)
+            elif len(data_shape) == 4:
+                print('Processing 4D data with channels and slices')
+                for i in range(data_shape[1]):  # For each Z slice
+                    # Create a composite RGB image from the first 3 channels (or fewer if not available)
+                    channels = min(data_shape[0], 3)
+                    
+                    if channels == 1:
+                        # Single channel - grayscale
+                        img_data = data[0, i]
+                        imageio.imwrite(f'{output_path}/{crop_info}_slice_{z_start+i}.png', img_data)
+                    
+                    elif channels == 2:
+                        # Two channels - put in red and green
+                        img1_norm = data[0, i] / np.max(data[0, i]) if np.max(data[0, i]) > 0 else data[0, i]
+                        img2_norm = data[1, i] / np.max(data[1, i]) if np.max(data[1, i]) > 0 else data[1, i]
+                        
+                        # Create RGB image with zeros (black background)
+                        rgb_image = np.zeros((data_shape[2], data_shape[3], 3), dtype=np.uint8)
+                        
+                        # Set red and green channels
+                        rgb_image[:, :, 0] = img1_norm * 255  # Red channel
+                        rgb_image[:, :, 1] = img2_norm * 255  # Green channel
+                        
+                        imageio.imwrite(f'{output_path}/{crop_info}_slice_{z_start+i}.png', rgb_image)
+                    
+                    else:  # 3 or more channels
+                        # Use first three channels for RGB
+                        rgb_image = np.zeros((data_shape[2], data_shape[3], 3), dtype=np.uint8)
+                        
+                        for c in range(min(3, data_shape[0])):
+                            img_norm = data[c, i] / np.max(data[c, i]) if np.max(data[c, i]) > 0 else data[c, i]
+                            rgb_image[:, :, c] = img_norm * 255
+                        
+                        imageio.imwrite(f'{output_path}/{crop_info}_slice_{z_start+i}.png', rgb_image)
+            
+            # Case 4: 2D data (Y, X)
+            elif len(data_shape) == 2:
+                print('Processing 2D grayscale image')
+                imageio.imwrite(f'{output_path}/{crop_info}.png', data)
+            
+            # Case 5: Unknown format - try to save anyway
+            else:
+                print(f'Unknown data format with shape {data_shape}, attempting to save')
+                imageio.imwrite(f'{output_path}/{crop_info}_unknown.png', data)
                 
         except Exception as e:
+            print(f"Error in save_3d_data: {str(e)}")
             raise Exception(f"Failed to save 3D data: {str(e)}")
+
+    def export_raw_images(self):
+        """Export raw images to a directory"""
+        if not self.original_images:
+            messagebox.showerror("Error", "No images available to export")
+            return
+            
+        # Ask for save directory
+        save_dir = filedialog.askdirectory(title="Select Directory for Raw Images")
+        if not save_dir:
+            return
+            
+        try:
+            # Create directory if it doesn't exist
+            os.makedirs(save_dir, exist_ok=True)
+            
+            # Save each original image
+            for i, img in enumerate(self.original_images):
+                # Create filename
+                if len(self.original_images) > 1:
+                    filename = f"raw_image_slice_{i+1:03d}.png"
+                else:
+                    filename = "raw_image.png"
+                    
+                # Save the image
+                img.save(os.path.join(save_dir, filename))
+                
+            messagebox.showinfo("Success", f"Exported {len(self.original_images)} raw images to {save_dir}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export raw images: {str(e)}")
+    
+    def export_annotation_masks(self):
+        """Export annotation masks to a directory"""
+        if not self.segmentation_masks:
+            messagebox.showerror("Error", "No annotation masks available to export")
+            return
+            
+        # Ask for save directory
+        save_dir = filedialog.askdirectory(title="Select Directory for Annotation Masks")
+        if not save_dir:
+            return
+            
+        try:
+            # Create directory if it doesn't exist
+            os.makedirs(save_dir, exist_ok=True)
+            
+            # Save each mask
+            for i, mask in enumerate(self.segmentation_masks):
+                # Create filename
+                if len(self.segmentation_masks) > 1:
+                    filename = f"annotation_mask_slice_{i+1:03d}.png"
+                else:
+                    filename = "annotation_mask.png"
+                    
+                # Save the mask
+                mask.save(os.path.join(save_dir, filename))
+                
+            messagebox.showinfo("Success", f"Exported {len(self.segmentation_masks)} annotation masks to {save_dir}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export annotation masks: {str(e)}")
+    
+    def export_multichannel_combined(self):
+        """Export multi-channel combined images"""
+        if not hasattr(self, 'raw_image_data') or self.raw_image_data is None:
+            messagebox.showerror("Error", "No multi-channel data available")
+            return
+            
+        # Ask for save directory
+        save_dir = filedialog.askdirectory(title="Select Directory for Multi-Channel Images")
+        if not save_dir:
+            return
+            
+        try:
+            # Create directory if it doesn't exist
+            os.makedirs(save_dir, exist_ok=True)
+            
+            # Create progress window
+            progress_window = tk.Toplevel(self.root)
+            progress_window.title("Exporting Multi-Channel Images")
+            progress_window.geometry("300x150")
+            progress_window.transient(self.root)
+            progress_window.grab_set()
+            
+            progress_label = ttk.Label(progress_window, text="Processing images...")
+            progress_label.pack(pady=20)
+            
+            progress_bar = ttk.Progressbar(progress_window, orient="horizontal", length=250, mode="determinate")
+            progress_bar.pack(pady=10)
+            
+            # Determine number of slices based on data shape
+            if len(self.raw_image_data.shape) == 4:  # (C, Z, Y, X)
+                num_slices = self.raw_image_data.shape[1]
+                progress_bar['maximum'] = num_slices
+                
+                for i in range(num_slices):
+                    # Update progress
+                    progress_bar['value'] = i + 1
+                    progress_label.config(text=f"Processing slice {i+1}/{num_slices}...")
+                    progress_window.update()
+                    
+                    # Create RGB composite
+                    channels = min(self.raw_image_data.shape[0], 3)
+                    rgb_image = np.zeros((self.raw_image_data.shape[2], self.raw_image_data.shape[3], 3), dtype=np.uint8)
+                    
+                    for c in range(channels):
+                        # Normalize channel data
+                        channel_data = self.raw_image_data[c, i]
+                        if channel_data.max() > channel_data.min():
+                            normalized = (channel_data - channel_data.min()) / (channel_data.max() - channel_data.min()) * 255
+                        else:
+                            normalized = np.zeros_like(channel_data)
+                        
+                        rgb_image[:, :, c] = normalized.astype(np.uint8)
+                    
+                    # Save composite image
+                    img = Image.fromarray(rgb_image)
+                    img.save(os.path.join(save_dir, f"multichannel_slice_{i+1:03d}.png"))
+                    
+            elif len(self.raw_image_data.shape) == 3 and self.raw_image_data.shape[0] <= 3:  # (C, Y, X)
+                # Single slice with multiple channels
+                progress_bar['maximum'] = 1
+                progress_bar['value'] = 1
+                progress_window.update()
+                
+                channels = self.raw_image_data.shape[0]
+                rgb_image = np.zeros((self.raw_image_data.shape[1], self.raw_image_data.shape[2], 3), dtype=np.uint8)
+                
+                for c in range(min(channels, 3)):
+                    # Normalize channel data
+                    channel_data = self.raw_image_data[c]
+                    if channel_data.max() > channel_data.min():
+                        normalized = (channel_data - channel_data.min()) / (channel_data.max() - channel_data.min()) * 255
+                    else:
+                        normalized = np.zeros_like(channel_data)
+                    
+                    rgb_image[:, :, c] = normalized.astype(np.uint8)
+                
+                # Save composite image
+                img = Image.fromarray(rgb_image)
+                img.save(os.path.join(save_dir, "multichannel_composite.png"))
+                
+            else:
+                messagebox.showerror("Error", "Unsupported data format for multi-channel export")
+                progress_window.destroy()
+                return
+            
+            # Close progress window
+            progress_window.destroy()
+            
+            messagebox.showinfo("Success", f"Exported multi-channel images to {save_dir}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export multi-channel images: {str(e)}")
+            try:
+                progress_window.destroy()
+            except:
+                pass
 
 if __name__ == "__main__":
     root = tk.Tk()
